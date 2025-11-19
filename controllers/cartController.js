@@ -4,19 +4,13 @@ const Cart = require('../models/Cart');
 exports.getCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.params.userId })
-      .populate('items.product', 'name price images stock');
+      // CORRECCIÓN: Usar nombres de campos en Español que coinciden con tu modelo Product
+      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
     
     if (!cart) {
-      return res.json({ 
-        success: true, 
-        cart: { items: [] } 
-      });
+      return res.json({ success: true, cart: { items: [] } });
     }
-
-    res.json({ 
-      success: true, 
-      cart 
-    });
+    res.json({ success: true, cart });
   } catch (error) {
     console.error('Error al obtener carrito:', error);
     res.status(500).json({ message: 'Error al obtener carrito', error: error.message });
@@ -26,153 +20,89 @@ exports.getCart = async (req, res) => {
 // Agregar item al carrito
 exports.addToCart = async (req, res) => {
   try {
-    const { userId, productId, quantity, size, color } = req.body;
+    const { userId, productId, quantity } = req.body; // Eliminados size/color si no se usan
 
     let cart = await Cart.findOne({ user: userId });
 
     if (!cart) {
-      // Crear nuevo carrito
       cart = await Cart.create({
         user: userId,
-        items: [{ product: productId, quantity, size, color }]
+        items: [{ product: productId, quantity }]
       });
     } else {
-      // Verificar si el producto ya está en el carrito
-      const itemIndex = cart.items.findIndex(
-        item => item.product.toString() === productId && 
-                item.size === size && 
-                item.color === color
-      );
-
+      const itemIndex = cart.items.findIndex(p => p.product.toString() === productId);
       if (itemIndex > -1) {
-        // Actualizar cantidad
         cart.items[itemIndex].quantity += quantity;
       } else {
-        // Agregar nuevo item
-        cart.items.push({ product: productId, quantity, size, color });
+        cart.items.push({ product: productId, quantity });
       }
-
       cart.updatedAt = Date.now();
       await cart.save();
     }
 
+    // Popular respuesta para actualizar frontend inmediatamente
     const populatedCart = await Cart.findById(cart._id)
-      .populate('items.product', 'name price images stock');
+       .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
 
-    res.json({ 
-      success: true,
-      message: 'Producto agregado al carrito',
-      cart: populatedCart 
-    });
+    res.json({ success: true, message: 'Agregado', cart: populatedCart });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Actualizar cantidad de item
+// Actualizar cantidad
 exports.updateCartItem = async (req, res) => {
   try {
     const { userId, itemId, quantity } = req.body;
-
     const cart = await Cart.findOne({ user: userId });
 
-    if (!cart) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Carrito no encontrado' 
-      });
-    }
+    if (!cart) return res.status(404).json({ message: 'Carrito no encontrado' });
 
     const item = cart.items.id(itemId);
-    if (!item) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Item no encontrado en el carrito' 
-      });
-    }
+    if (!item) return res.status(404).json({ message: 'Item no encontrado' });
 
     item.quantity = quantity;
-    cart.updatedAt = Date.now();
     await cart.save();
 
     const populatedCart = await Cart.findById(cart._id)
-      .populate('items.product', 'name price images stock');
+      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
 
-    res.json({ 
-      success: true,
-      message: 'Cantidad actualizada',
-      cart: populatedCart 
-    });
+    res.json({ success: true, message: 'Actualizado', cart: populatedCart });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Eliminar item del carrito
+// Eliminar item
 exports.removeFromCart = async (req, res) => {
   try {
     const { userId, itemId } = req.params;
-
     const cart = await Cart.findOne({ user: userId });
 
-    if (!cart) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Carrito no encontrado' 
-      });
-    }
+    if (!cart) return res.status(404).json({ message: 'Carrito no encontrado' });
 
     cart.items = cart.items.filter(item => item._id.toString() !== itemId);
-    cart.updatedAt = Date.now();
     await cart.save();
 
     const populatedCart = await Cart.findById(cart._id)
-      .populate('items.product', 'name price images stock');
+      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
 
-    res.json({ 
-      success: true,
-      message: 'Producto eliminado del carrito',
-      cart: populatedCart 
-    });
+    res.json({ success: true, message: 'Eliminado', cart: populatedCart });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-// Limpiar carrito
+// Limpiar
 exports.clearCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.params.userId });
-
-    if (!cart) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Carrito no encontrado' 
-      });
-    }
+    if (!cart) return res.status(404).json({ message: 'Carrito no encontrado' });
 
     cart.items = [];
-    cart.updatedAt = Date.now();
     await cart.save();
-
-    res.json({ 
-      success: true,
-      message: 'Carrito vaciado',
-      cart 
-    });
+    res.json({ success: true, message: 'Vaciado', cart });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
