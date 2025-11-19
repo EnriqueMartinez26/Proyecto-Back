@@ -15,21 +15,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// --- IMPORTANTE: Cargar todas las rutas desde el índice ---
 const routes = require('./routes/index');
+
+// Montar rutas bajo /api
 app.use('/api', routes);
+
+// Ruta de estado
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString() 
-    });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Manejo de rutas no encontradas
+// Manejo de 404
 app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Ruta no encontrada'
-    });
+    res.status(404).json({ success: false, message: 'Ruta no encontrada' });
 });
 
 // Manejo de errores
