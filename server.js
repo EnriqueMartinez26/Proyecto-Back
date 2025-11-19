@@ -1,46 +1,36 @@
+require('dotenv').config();
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
 const connectDB = require('./config/database');
 
-// Cargar variables de entorno
-dotenv.config();
+const app = express();
 
 // Conectar a MongoDB
 connectDB();
 
-const app = express();
-
 // Middlewares
-app.use(helmet()); // Seguridad HTTP headers
-app.use(cors()); // Habilitar CORS
-app.use(morgan('dev')); // Logger de peticiones
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Ruta de prueba
 app.get('/', (req, res) => {
-  res.json({ message: 'API funcionando correctamente' });
+  res.json({ message: 'API de Golstore funcionando correctamente' });
 });
 
-// Importar rutas
-// TODO: Agregar rutas aquí
+// Rutas
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/products', require('./routes/product.routes'));
+app.use('/api/categories', require('./routes/category.routes'));
+app.use('/api/orders', require('./routes/order.routes'));
+app.use('/api/users', require('./routes/user.routes'));
+app.use('/api/cart', require('./routes/cart.routes'));
 
-// Manejo de errores 404
-app.use((req, res) => {
-  res.status(404).json({ message: 'Ruta no encontrada' });
-});
-
-// Manejo global de errores
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
-    message: err.message || 'Error interno del servidor',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
-});
+// Manejo de errores
+app.use(require('./middlewares/errorHandler'));
 
 const PORT = process.env.PORT || 5000;
 
