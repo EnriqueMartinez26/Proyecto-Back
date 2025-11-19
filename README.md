@@ -1,6 +1,6 @@
-# Backend Golstore
+# Backend 4Fun
 
-Backend para tienda de artículos deportivos desarrollado con Node.js, Express y MongoDB.
+Backend para tienda 4Fun de artículos deportivos desarrollado con Node.js, Express y MongoDB.
 
 ## Tecnologías
 
@@ -20,7 +20,7 @@ npm install
 Copiar `.env.example` a `.env` y configurar las variables necesarias:
 ```
 PORT=5000
-MONGODB_URI=mongodb://localhost:27017/golstore
+MONGODB_URI=mongodb://localhost:27017/4fun
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 ```
@@ -122,4 +122,4 @@ npm start
 
 ## Autor
 
-Enrique Martinez - Golstore
+Enrique Martinez - 4Fun

@@ -18,7 +18,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Ruta de prueba
 app.get('/', (req, res) => {
-  res.json({ message: 'API de Golstore funcionando correctamente' });
+  res.json({ message: 'API de 4Fun funcionando correctamente' });
 });
 
 // Rutas
