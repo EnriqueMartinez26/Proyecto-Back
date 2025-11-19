@@ -1,50 +1,57 @@
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
+const dotenv = require('dotenv');
 const connectDB = require('./config/database');
 
 // Cargar variables de entorno
 dotenv.config();
 
-// Conectar a MongoDB
+// Conectar a la base de datos
 connectDB();
 
 const app = express();
 
 // Middlewares
-app.use(helmet()); // Seguridad HTTP headers
-app.use(cors()); // Habilitar CORS
-app.use(morgan('dev')); // Logger de peticiones
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Ruta de prueba
-app.get('/', (req, res) => {
-  res.json({ message: 'API funcionando correctamente' });
+// Importar rutas existentes
+const authRoutes = require('./routes/authRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+
+// Rutas existentes
+app.use('/api/auth', authRoutes);
+app.use('/api/cart', cartRoutes);
+
+// Ruta de health check
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        timestamp: new Date().toISOString() 
+    });
 });
 
-// Importar rutas
-// TODO: Agregar rutas aquí
-
-// Manejo de errores 404
+// Manejo de rutas no encontradas
 app.use((req, res) => {
-  res.status(404).json({ message: 'Ruta no encontrada' });
+    res.status(404).json({
+        success: false,
+        message: 'Ruta no encontrada'
+    });
 });
 
-// Manejo global de errores
+// Manejo de errores
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(err.status || 500).json({
-    message: err.message || 'Error interno del servidor',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
+    console.error(err.stack);
+    res.status(500).json({
+        success: false,
+        message: 'Error en el servidor',
+        error: err.message
+    });
 });
 
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-  console.log(`📝 Modo: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
 });
