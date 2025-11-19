@@ -10,10 +10,8 @@ exports.getAllUsers = async (req, res) => {
       users 
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ message: 'Error al obtener usuarios', error: error.message });
   }
 };
 

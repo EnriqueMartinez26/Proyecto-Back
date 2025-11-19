@@ -102,10 +102,8 @@ exports.getAllOrders = async (req, res) => {
       orders 
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    console.error('Error al obtener órdenes:', error);
+    res.status(500).json({ message: 'Error al obtener órdenes', error: error.message });
   }
 };
 
