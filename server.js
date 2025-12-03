@@ -21,6 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/products', require('./routes/productRoutes')); // Aseguramos que esta ruta use el nuevo controlador
+app.use('/api/wishlist', require('./routes/wishlistRoutes')); // <--- LÍNEA AÑADIDA PARA CORREGIR EL ERROR 404
 // app.use('/api/categories', require('./routes/categoryRoutes')); // Descomentar si existe
 
 // Ruta de health check
