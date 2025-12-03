@@ -32,11 +32,11 @@ class ProductService {
     
     const [products, total] = await Promise.all([
       Product.find(query)
-        .select('nombre precio imagenUrl plataformaId generoId stock calificacion') // Projection para performance
+        .select('nombre precio imagenUrl plataformaId generoId stock calificacion') 
         .skip(skip)
         .limit(Number(limit))
         .sort({ createdAt: -1 })
-        .lean(), // Retorna objetos JS planos, no documentos Mongoose (más rápido)
+        .lean(), 
       Product.countDocuments(query)
     ]);
 
@@ -55,7 +55,7 @@ class ProductService {
   async getProductById(id) {
     const product = await Product.findById(id).lean();
     if (!product) {
-      throw new Error('ProductNotFound'); // Error de dominio
+      throw new Error('ProductNotFound'); 
     }
     return product;
   }
@@ -78,8 +78,13 @@ class ProductService {
   }
 
   async deleteProduct(id) {
-    // Soft delete (recomendado) o Hard delete según requisitos. Aquí usamos Hard delete por compatibilidad.
-    const product = await Product.findByIdAndDelete(id);
+    // Soft Delete: Marcar el producto como inactivo en lugar de borrarlo
+    const product = await Product.findByIdAndUpdate(
+      id, 
+      { activo: false }, 
+      { new: true }
+    );
+    
     if (!product) {
       throw new Error('ProductNotFound');
     }
