@@ -1,42 +1,74 @@
-const Product = require('../models/Product');
-const mongoose = require('mongoose');
+const ProductService = require('../services/productService');
 
-exports.getProducts = async (req, res) => {
+// Obtener todos los productos (con filtros y paginación)
+exports.getProducts = async (req, res, next) => {
   try {
-    const products = await Product.find();
-    res.json(products);
-  } catch (error) { res.status(500).json({ message: error.message }); }
+    const { search, platform, genre, minPrice, maxPrice, page, limit } = req.query;
+
+    const result = await ProductService.getProducts({
+      search,
+      platform,
+      genre,
+      minPrice,
+      maxPrice,
+      page,
+      limit
+    });
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
-exports.getProduct = async (req, res) => {
+// Obtener producto por ID
+exports.getProduct = async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'ID inválido' });
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ message: 'No encontrado' });
-    res.json(product);
-  } catch (error) { res.status(500).json({ message: error.message }); }
+    const product = await ProductService.getProductById(req.params.id);
+    res.status(200).json({ success: true, data: product });
+  } catch (error) {
+    if (error.message === 'ProductNotFound') {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    next(error);
+  }
 };
 
-exports.createProduct = async (req, res) => {
+// Crear producto
+exports.createProduct = async (req, res, next) => {
   try {
-    const newProduct = new Product(req.body);
-    await newProduct.save();
-    res.status(201).json(newProduct);
-  } catch (error) { res.status(400).json({ message: error.message }); }
+    const product = await ProductService.createProduct(req.body);
+    res.status(201).json({ success: true, data: product });
+  } catch (error) {
+    next(error);
+  }
 };
 
-exports.updateProduct = async (req, res) => {
+// Actualizar producto
+exports.updateProduct = async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID inválido' });
-    const updated = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json(updated);
-  } catch (error) { res.status(500).json({ message: error.message }); }
+    const product = await ProductService.updateProduct(req.params.id, req.body);
+    res.status(200).json({ success: true, data: product });
+  } catch (error) {
+    if (error.message === 'ProductNotFound') {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    next(error);
+  }
 };
 
-exports.deleteProduct = async (req, res) => {
+// Eliminar producto
+exports.deleteProduct = async (req, res, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID inválido' });
-    await Product.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Eliminado' });
-  } catch (error) { res.status(500).json({ message: error.message }); }
+    await ProductService.deleteProduct(req.params.id);
+    res.status(200).json({ success: true, message: 'Producto eliminado' });
+  } catch (error) {
+    if (error.message === 'ProductNotFound') {
+      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+    }
+    next(error);
+  }
 };
