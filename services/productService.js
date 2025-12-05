@@ -32,7 +32,9 @@ class ProductService {
     
     const [products, total] = await Promise.all([
       Product.find(query)
-        .select('nombre precio imagenUrl plataformaId generoId stock calificacion') 
+        // CORRECCIÓN: Agregamos 'descripcion', 'tipo', 'desarrollador' y 'fechaLanzamiento'
+        // que son requeridos por el esquema Zod del frontend.
+        .select('nombre precio imagenUrl plataformaId generoId stock calificacion descripcion tipo desarrollador fechaLanzamiento') 
         .skip(skip)
         .limit(Number(limit))
         .sort({ createdAt: -1 })

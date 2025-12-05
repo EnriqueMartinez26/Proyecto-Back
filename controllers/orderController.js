@@ -1,7 +1,8 @@
 const Order = require('../models/Order');
+const OrderService = require('../services/orderService');
 
 // Crear orden
-exports.createOrder = async (req, res) => {
+exports.createOrder = async (req, res, next) => {
   try {
     const {
       orderItems,
@@ -9,19 +10,13 @@ exports.createOrder = async (req, res) => {
       paymentMethod,
       itemsPrice,
       shippingPrice,
-      totalPrice,
-      user
+      totalPrice
     } = req.body;
 
-    if (orderItems && orderItems.length === 0) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'No hay productos en la orden' 
-      });
-    }
-
-    const order = await Order.create({
-      user,
+    // Delegamos al servicio, pasando el ID del usuario AUTENTICADO (req.user._id)
+    // Esto previene que un usuario cree órdenes a nombre de otro.
+    const order = await OrderService.createOrder({
+      user: req.user._id, 
       orderItems,
       shippingAddress,
       paymentMethod,
@@ -36,44 +31,39 @@ exports.createOrder = async (req, res) => {
       order 
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    // Delegar al middleware global de errores
+    next(error);
   }
 };
 
 // Obtener orden por ID
-exports.getOrder = async (req, res) => {
+exports.getOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('user', 'name email')
       .populate('orderItems.product', 'name price');
     
     if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Orden no encontrada' 
-      });
+      return res.status(404).json({ success: false, message: 'Orden no encontrada' });
     }
 
-    res.json({ 
-      success: true, 
-      order 
-    });
+    // Seguridad: Verificar que la orden pertenezca al usuario o sea admin
+    if (order.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+       return res.status(403).json({ success: false, message: 'No autorizado para ver esta orden' });
+    }
+
+    res.json({ success: true, order });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    next(error);
   }
 };
 
-// Obtener órdenes de un usuario
-exports.getUserOrders = async (req, res) => {
+// Obtener órdenes del usuario autenticado
+exports.getUserOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find({ user: req.params.userId })
-      .populate('orderItems.product', 'name price images')
+    // Usamos req.user._id del token, ignorando cualquier ID que venga en la URL por seguridad
+    const orders = await Order.find({ user: req.user._id })
+      .populate('orderItems.product', 'name price imagenUrl')
       .sort({ createdAt: -1 });
 
     res.json({ 
@@ -82,41 +72,30 @@ exports.getUserOrders = async (req, res) => {
       orders 
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    next(error);
   }
 };
 
-// Obtener todas las órdenes (admin)
-exports.getAllOrders = async (req, res) => {
+// Admin: Obtener todas
+exports.getAllOrders = async (req, res, next) => {
   try {
     const orders = await Order.find()
       .populate('user', 'name email')
       .sort({ createdAt: -1 });
 
-    res.json({ 
-      success: true, 
-      count: orders.length,
-      orders 
-    });
+    res.json({ success: true, count: orders.length, orders });
   } catch (error) {
-    console.error('Error al obtener órdenes:', error);
-    res.status(500).json({ message: 'Error al obtener órdenes', error: error.message });
+    next(error);
   }
 };
 
-// Actualizar estado de orden
-exports.updateOrderStatus = async (req, res) => {
+// Actualizar estado (Admin)
+exports.updateOrderStatus = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
 
     if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Orden no encontrada' 
-      });
+      return res.status(404).json({ success: false, message: 'Orden no encontrada' });
     }
 
     order.orderStatus = req.body.status || order.orderStatus;
@@ -127,30 +106,18 @@ exports.updateOrderStatus = async (req, res) => {
     }
 
     const updatedOrder = await order.save();
-
-    res.json({ 
-      success: true,
-      message: 'Estado de orden actualizado',
-      order: updatedOrder 
-    });
+    res.json({ success: true, message: 'Estado actualizado', order: updatedOrder });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    next(error);
   }
 };
 
-// Actualizar orden a pagada
-exports.updateOrderToPaid = async (req, res) => {
+// Pagar orden
+exports.updateOrderToPaid = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
-
     if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Orden no encontrada' 
-      });
+      return res.status(404).json({ success: false, message: 'Orden no encontrada' });
     }
 
     order.isPaid = true;
@@ -162,16 +129,8 @@ exports.updateOrderToPaid = async (req, res) => {
     };
 
     const updatedOrder = await order.save();
-
-    res.json({ 
-      success: true,
-      message: 'Orden marcada como pagada',
-      order: updatedOrder 
-    });
+    res.json({ success: true, message: 'Orden pagada', order: updatedOrder });
   } catch (error) {
-    res.status(500).json({ 
-      success: false,
-      message: error.message 
-    });
+    next(error);
   }
 };

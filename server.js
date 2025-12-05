@@ -2,42 +2,51 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
+const mongoSanitize = require('express-mongo-sanitize');
 const connectDB = require('./config/database');
 const errorHandler = require('./middlewares/errorHandler');
+const validateEnv = require('./middlewares/validateEnv');
 
 dotenv.config();
+validateEnv();
 connectDB();
 
 const app = express();
 
-// --- CORRECCIÓN CORS ---
-// Definimos una lista blanca de orígenes permitidos
-const allowedOrigins = [
-  'http://localhost:3000', // Next.js default
-  'http://localhost:9002', // Tu puerto actual de Frontend
-  process.env.FRONTEND_URL // Variable de entorno opcional
-].filter(Boolean);
-
+// --- CONFIGURACIÓN CORS ROBUSTA ---
+// Permitimos localhost y cualquier IP de red local (192.168.x.x)
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como Postman o apps móviles)
+    // Permitir peticiones sin origen (como Postman o Server-to-Server)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Lista blanca explícita
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:9002',
+      process.env.FRONTEND_URL
+    ];
+
+    // Lógica: Permitir si está en la lista blanca O si es una IP local (para pruebas en móvil/red)
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://192.168.')) {
       callback(null, true);
     } else {
-      console.log('Bloqueado por CORS:', origin); // Log para depuración
+      console.error('Bloqueado por CORS:', origin);
       callback(new Error('No permitido por CORS'));
     }
   },
-  credentials: true 
+  credentials: true, // Importante para las cookies de sesión
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-// ----------------------
+// ----------------------------------
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(mongoSanitize());
 
+// Rutas
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
@@ -58,9 +67,8 @@ app.use((req, res, next) => {
 
 app.use(errorHandler);
 
-// Usamos el puerto definido o 5000 por defecto (parece que estás usando 9003 en tu env)
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
     console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+    console.log(`��� Modo: ${process.env.NODE_ENV}`);
 });
