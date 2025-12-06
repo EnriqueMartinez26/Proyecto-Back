@@ -1,11 +1,13 @@
 const Cart = require('../models/Cart');
 
+// Campos necesarios para pasar la validación Zod en el Frontend (Solución a $NaN)
+const PRODUCT_FIELDS = 'nombre precio imagenUrl stock plataformaId generoId tipo descripcion desarrollador fechaLanzamiento calificacion';
+
 // Obtener carrito del usuario
 exports.getCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.params.userId })
-      // CORRECCIÓN: Usar nombres de campos en Español que coinciden con tu modelo Product
-      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
+      .populate('items.product', PRODUCT_FIELDS);
     
     if (!cart) {
       return res.json({ success: true, cart: { items: [] } });
@@ -20,7 +22,7 @@ exports.getCart = async (req, res) => {
 // Agregar item al carrito
 exports.addToCart = async (req, res) => {
   try {
-    const { userId, productId, quantity } = req.body; // Eliminados size/color si no se usan
+    const { userId, productId, quantity } = req.body;
 
     let cart = await Cart.findOne({ user: userId });
 
@@ -40,9 +42,9 @@ exports.addToCart = async (req, res) => {
       await cart.save();
     }
 
-    // Popular respuesta para actualizar frontend inmediatamente
+    // Popular respuesta completa para evitar errores en frontend
     const populatedCart = await Cart.findById(cart._id)
-       .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
+       .populate('items.product', PRODUCT_FIELDS);
 
     res.json({ success: true, message: 'Agregado', cart: populatedCart });
   } catch (error) {
@@ -65,7 +67,7 @@ exports.updateCartItem = async (req, res) => {
     await cart.save();
 
     const populatedCart = await Cart.findById(cart._id)
-      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
+      .populate('items.product', PRODUCT_FIELDS);
 
     res.json({ success: true, message: 'Actualizado', cart: populatedCart });
   } catch (error) {
@@ -85,7 +87,7 @@ exports.removeFromCart = async (req, res) => {
     await cart.save();
 
     const populatedCart = await Cart.findById(cart._id)
-      .populate('items.product', 'nombre precio imagenUrl stock plataformaId');
+      .populate('items.product', PRODUCT_FIELDS);
 
     res.json({ success: true, message: 'Eliminado', cart: populatedCart });
   } catch (error) {
@@ -93,7 +95,7 @@ exports.removeFromCart = async (req, res) => {
   }
 };
 
-// Limpiar
+// Limpiar carrito
 exports.clearCart = async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.params.userId });

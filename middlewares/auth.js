@@ -5,11 +5,11 @@ exports.protect = async (req, res, next) => {
     try {
         let token;
 
-        // 1. Buscar token en Cookies (Prioridad)
+        // 1. Prioridad: Token en Cookie (HttpOnly - Más seguro contra XSS)
         if (req.cookies.token) {
             token = req.cookies.token;
         }
-        // 2. Fallback: Buscar en Header (para pruebas con Postman si se requiere)
+        // 2. Fallback: Header Authorization (Bearer)
         else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
             token = req.headers.authorization.split(' ')[1];
         }
@@ -17,29 +17,26 @@ exports.protect = async (req, res, next) => {
         if (!token || token === 'none') {
             return res.status(401).json({
                 success: false,
-                message: 'No autorizado, inicie sesión'
+                message: 'Sesión expirada o no válida'
             });
         }
 
-        // Verificar token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        // SEGURIDAD CRÍTICA: Fallar si no hay secreto configurado
+        if (!process.env.JWT_SECRET) {
+            console.error("FATAL: JWT_SECRET no definido en variables de entorno.");
+            return res.status(500).json({ success: false, message: 'Error de configuración del servidor' });
+        }
 
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = await User.findById(decoded.id).select('-password');
 
         if (!req.user) {
-            return res.status(401).json({
-                success: false,
-                message: 'Usuario no encontrado'
-            });
+            return res.status(401).json({ success: false, message: 'Usuario no encontrado' });
         }
 
         next();
     } catch (error) {
-        console.error('Auth Middleware Error:', error.message);
-        res.status(401).json({
-            success: false,
-            message: 'No autorizado, token inválido'
-        });
+        return res.status(401).json({ success: false, message: 'No autorizado' });
     }
 };
 
@@ -48,7 +45,7 @@ exports.authorize = (...roles) => {
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
                 success: false,
-                message: `El rol ${req.user.role} no tiene permiso`
+                message: `Acceso denegado: Se requiere rol ${roles.join(' o ')}`
             });
         }
         next();

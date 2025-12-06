@@ -3,9 +3,12 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/database');
 const errorHandler = require('./middlewares/errorHandler');
 const validateEnv = require('./middlewares/validateEnv');
+const logger = require('./utils/logger'); // Importar Winston
 
 dotenv.config();
 validateEnv();
@@ -13,35 +16,49 @@ connectDB();
 
 const app = express();
 
-// --- CONFIGURACI√ìN CORS ROBUSTA ---
-// Permitimos localhost y cualquier IP de red local (192.168.x.x)
+// Seguridad de Headers
+app.use(helmet());
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 10 * 60 * 1000, 
+  max: 100, 
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Demasiadas peticiones, intenta m√°s tarde." }
+});
+app.use('/api', limiter);
+
+// --- MIDDLEWARE DE LOGGING (NUEVO) ---
+// Registra cada petici√≥n HTTP que llega al servidor
+app.use((req, res, next) => {
+  logger.info(`HTTP Request: ${req.method} ${req.url}`, {
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+  next();
+});
+
+// Configuraci√≥n CORS con Logging
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como Postman o Server-to-Server)
     if (!origin) return callback(null, true);
-    
-    // Lista blanca expl√≠cita
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:9002',
       process.env.FRONTEND_URL
     ];
-
-    // L√≥gica: Permitir si est√° en la lista blanca O si es una IP local (para pruebas en m√≥vil/red)
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://192.168.')) {
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://192.168.') || origin.includes('ngrok')) {
       callback(null, true);
     } else {
-      console.error('Bloqueado por CORS:', origin);
-      callback(new Error('No permitido por CORS'));
+      logger.warn(`Bloqueo CORS para origen desconocido: ${origin}`);
+      callback(new Error('Bloqueado por CORS'));
     }
   },
-  credentials: true, // Importante para las cookies de sesi√≥n
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  credentials: true 
 }));
-// ----------------------------------
 
-app.use(express.json());
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(mongoSanitize());
@@ -59,7 +76,9 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Manejo de 404
 app.use((req, res, next) => {
+    logger.warn(`Ruta no encontrada (404): ${req.method} ${req.originalUrl}`);
     const error = new Error(`Ruta no encontrada - ${req.originalUrl}`);
     error.statusCode = 404;
     next(error);
@@ -69,6 +88,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`‚úÖ Servidor corriendo en puerto ${PORT}`);
-    console.log(`Ì¥ß Modo: ${process.env.NODE_ENV}`);
+    logger.info(`Ìª°Ô∏è  Seguridad Activada (Helmet + RateLimit)`);
+    logger.info(`‚úÖ Servidor corriendo en puerto ${PORT}`);
+    logger.info(`Ì¥ß Modo: ${process.env.NODE_ENV}`);
 });
