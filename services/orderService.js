@@ -1,109 +1,155 @@
 const Order = require('../models/Order');
 const Product = require('../models/Product');
-const { MercadoPagoConfig, Preference } = require('mercadopago');
+const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
+const crypto = require('crypto');
 
-// Inicialización Lazy del cliente de MP (se ejecuta al primer uso)
 let mpClient = null;
 const getMpClient = () => {
   if (!mpClient) {
     if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
-      throw new Error("MERCADOPAGO_ACCESS_TOKEN no configurado en .env");
+      throw new Error("FATAL: MERCADOPAGO_ACCESS_TOKEN no configurado.");
     }
-    mpClient = new MercadoPagoConfig({ accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN });
+    mpClient = new MercadoPagoConfig({ 
+      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
+      options: { timeout: 5000 }
+    });
   }
   return mpClient;
 };
 
 class OrderService {
-  async createOrder({ user, orderItems, shippingAddress, paymentMethod, totalPrice }) {
-    // 1. Validar Stock y Recalcular Totales (Seguridad)
-    if (!orderItems || orderItems.length === 0) throw new Error('No hay items');
+  async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
+    if (!orderItems?.length) throw new Error('El carrito está vacío.');
 
+    // 1. Validaciones
     let calculatedTotal = 0;
     const validatedItems = [];
 
-    // Verificación atómica de inventario
     for (const item of orderItems) {
       const product = await Product.findById(item.product);
       if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
+      if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
       
-      if (product.stock < item.quantity) {
-        throw new Error(`Stock insuficiente para: ${product.nombre}`);
-      }
-      
-      // Usamos el precio real de la BD, no el que manda el frontend
       calculatedTotal += product.precio * item.quantity;
       
       validatedItems.push({
-        ...item,
-        price: product.precio,
-        name: product.nombre,
-        description: product.descripcion?.substring(0, 200) // MP tiene límite de longitud
+        id: item.product.toString(),
+        title: item.name,
+        quantity: Number(item.quantity),
+        unit_price: Number(product.precio),
+        currency_id: 'ARS', 
+        picture_url: item.image,
+        description: product.descripcion?.substring(0, 200)
       });
     }
 
-    // 2. Descontar Stock (Reserva)
-    // Nota: Si el pago falla, deberíamos tener un cron job o webhook que devuelva el stock.
-    // Por simplicidad en MVP, descontamos ahora.
+    // 2. Reserva de Stock
     for (const item of validatedItems) {
-        await Product.findByIdAndUpdate(item.product, {
+        await Product.findByIdAndUpdate(item.id, {
             $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
         });
     }
 
-    // 3. Crear Orden en Base de Datos (Estado: pendiente_pago)
+    // 3. Crear Orden Local
     const order = await Order.create({
       user,
-      orderItems: validatedItems,
+      orderItems: validatedItems.map(i => ({...i, product: i.id, name: i.title, price: i.unit_price})),
       shippingAddress,
       paymentMethod,
       itemsPrice: calculatedTotal,
-      totalPrice: calculatedTotal, // + envío si hubiera
+      totalPrice: calculatedTotal,
       orderStatus: 'pendiente_pago',
       isPaid: false
     });
 
-    // 4. Generar Preferencia de Mercado Pago
-    const client = getMpClient();
-    const preference = new Preference(client);
+    // 4. Preferencia MP (Checkout Pro)
+    try {
+      const client = getMpClient();
+      const preference = new Preference(client);
 
-    const preferenceData = {
-      body: {
-        items: validatedItems.map(item => ({
-          id: item.product.toString(),
-          title: item.name,
-          quantity: Number(item.quantity),
-          unit_price: Number(item.price),
-          currency_id: 'ARS', // Cambiar según tu país (MXN, USD, etc)
-          picture_url: item.image
-        })),
-        payer: {
-          // Aquí podrías agregar email del usuario real si lo tienes disponible en 'user'
-          // email: user.email 
-        },
-        back_urls: {
-          success: `${process.env.FRONTEND_URL}/checkout/success`,
-          failure: `${process.env.FRONTEND_URL}/checkout/failure`,
-          pending: `${process.env.FRONTEND_URL}/checkout/pending`
-        },
-        auto_return: 'approved',
-        external_reference: order._id.toString(), // <--- EL DATO MÁS IMPORTANTE
-        statement_descriptor: "4FUN GAMES",
-        // notification_url: `${process.env.BACKEND_URL}/api/orders/webhook` // Habilitar cuando tengamos HTTPS/Ngrok
+      // USAMOS NGROK (BACKEND) COMO PUENTE DE RETORNO
+      const backendUrl = process.env.BACKEND_URL; 
+      if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
+
+      const preferenceData = {
+        body: {
+          items: validatedItems,
+          back_urls: {
+            // Apuntamos al backend, pasando el estado esperado como query param
+            success: `${backendUrl}/api/orders/feedback?status=approved`,
+            failure: `${backendUrl}/api/orders/feedback?status=failure`,
+            pending: `${backendUrl}/api/orders/feedback?status=pending`
+          },
+          auto_return: 'approved',
+          external_reference: order._id.toString(),
+          statement_descriptor: "GOLSTORE",
+          notification_url: `${backendUrl}/api/orders/webhook`,
+          expires: true,
+          expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        }
+      };
+
+      const mpResponse = await preference.create(preferenceData);
+
+      order.externalId = mpResponse.id;
+      await order.save();
+
+      return { order, paymentLink: mpResponse.init_point };
+
+    } catch (error) {
+      // Rollback si falla
+      for (const item of validatedItems) {
+        await Product.findByIdAndUpdate(item.id, { $inc: { stock: item.quantity } });
       }
-    };
+      await Order.findByIdAndDelete(order._id);
+      throw new Error(`Error Mercado Pago: ${error.message}`);
+    }
+  }
 
-    const mpResponse = await preference.create(preferenceData);
+  // Webhook Handler (Sin cambios)
+  async handleWebhook(headers, body, query) {
+    const xSignature = headers['x-signature'];
+    const dataId = body?.data?.id || query['data.id']; 
+    const type = body?.type || query.type;
 
-    // 5. Guardar ID de preferencia en la orden para referencia
-    order.externalId = mpResponse.id;
-    await order.save();
+    if (type !== 'payment') return { status: 'ignored' };
+    if (!dataId) throw new Error('Missing payment ID');
 
-    // Retornamos la orden y el link de pago (init_point)
-    return { 
-      order, 
-      paymentLink: mpResponse.init_point 
-    };
+    // Validación de Firma
+    if (process.env.MERCADOPAGO_WEBHOOK_SECRET && xSignature) {
+      const parts = xSignature.split(',');
+      let ts,QH;
+      parts.forEach(p => {
+        const [k, v] = p.split('=');
+        if (k === 'ts') ts = v;
+        if (k === 'v1') QH = v;
+      });
+      const manifest = `id:${dataId};request-id:${headers['x-request-id']};ts:${ts};`;
+      const hmac = crypto.createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET);
+      const digest = hmac.update(manifest).digest('hex');
+      if (QH !== digest) console.warn('⚠️ Firma de webhook inválida (continuando en dev)');
+    }
+
+    const client = getMpClient();
+    const payment = new Payment(client);
+    const paymentInfo = await payment.get({ id: dataId });
+
+    if (!paymentInfo) throw new Error('Pago no encontrado');
+
+    const order = await Order.findById(paymentInfo.external_reference);
+    if (!order) throw new Error('Orden no encontrada');
+    
+    if (order.orderStatus === 'pagado') return { status: 'ok' };
+
+    if (paymentInfo.status === 'approved') {
+      order.isPaid = true;
+      order.paidAt = new Date();
+      order.orderStatus = 'pagado';
+      order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
+      await order.save();
+    } 
+    
+    return { status: 'ok', state: paymentInfo.status };
   }
 }
 

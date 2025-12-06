@@ -6,14 +6,22 @@ const {
   getUserOrders,
   getAllOrders,
   updateOrderStatus,
-  updateOrderToPaid
+  updateOrderToPaid,
+  receiveWebhook,
+  paymentFeedback // <--- Importamos el puente
 } = require('../controllers/orderController');
+const { protect, authorize } = require('../middlewares/auth');
 
-router.post('/', createOrder);
-router.get('/', getAllOrders);
-router.get('/myorders/:userId', getUserOrders);
-router.get('/:id', getOrder);
-router.put('/:id/pay', updateOrderToPaid);
-router.put('/:id/deliver', updateOrderStatus);
+// Rutas PÚBLICAS para Mercado Pago (Webhook y Feedback)
+router.post('/webhook', receiveWebhook);
+router.get('/feedback', paymentFeedback); // <--- Nueva ruta pública
+
+// Rutas Protegidas
+router.post('/', protect, createOrder);
+router.get('/', protect, authorize('admin'), getAllOrders);
+router.get('/myorders/:userId', protect, getUserOrders);
+router.get('/:id', protect, getOrder);
+router.put('/:id/pay', protect, updateOrderToPaid);
+router.put('/:id/deliver', protect, authorize('admin'), updateOrderStatus);
 
 module.exports = router;
