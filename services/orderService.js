@@ -1,10 +1,9 @@
 const Order = require('../models/Order');
 const Product = require('../models/Product');
-const DigitalKey = require('../models/DigitalKey'); // <--- NUEVO IMPORT
+const DigitalKey = require('../models/DigitalKey');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const crypto = require('crypto');
 
-// ... (Mantén el código de getMpClient y createOrder igual hasta handleWebhook) ...
 let mpClient = null;
 const getMpClient = () => {
   if (!mpClient) {
@@ -20,93 +19,95 @@ const getMpClient = () => {
 };
 
 class OrderService {
-    // ... (Mantén createOrder exactamente como estaba) ...
-    async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
-        if (!orderItems?.length) throw new Error('El carrito está vacío.');
-    
-        // 1. Validaciones
-        let calculatedTotal = 0;
-        const validatedItems = [];
-    
-        for (const item of orderItems) {
-          const product = await Product.findById(item.product);
-          if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
-          if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
-          
-          calculatedTotal += product.precio * item.quantity;
-          
-          validatedItems.push({
-            id: item.product.toString(),
-            title: item.name,
-            quantity: Number(item.quantity),
-            unit_price: Number(product.precio),
-            currency_id: 'ARS', 
-            picture_url: item.image,
-            description: product.descripcion?.substring(0, 200)
-          });
-        }
-    
-        // 2. Reserva de Stock
-        for (const item of validatedItems) {
-            await Product.findByIdAndUpdate(item.id, {
-                $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
-            });
-        }
-    
-        // 3. Crear Orden Local
-        const order = await Order.create({
-          user,
-          orderItems: validatedItems.map(i => ({...i, product: i.id, name: i.title, price: i.unit_price})),
-          shippingAddress,
-          paymentMethod,
-          itemsPrice: calculatedTotal,
-          totalPrice: calculatedTotal,
-          orderStatus: 'pendiente_pago',
-          isPaid: false
-        });
-    
-        // 4. Preferencia MP (Checkout Pro)
-        try {
-          const client = getMpClient();
-          const preference = new Preference(client);
-    
-          const backendUrl = process.env.BACKEND_URL; 
-          if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
-    
-          const preferenceData = {
-            body: {
-              items: validatedItems,
-              back_urls: {
-                success: `${backendUrl}/api/orders/feedback?status=approved`,
-                failure: `${backendUrl}/api/orders/feedback?status=failure`,
-                pending: `${backendUrl}/api/orders/feedback?status=pending`
-              },
-              auto_return: 'approved',
-              external_reference: order._id.toString(),
-              statement_descriptor: "GOLSTORE",
-              notification_url: `${backendUrl}/api/orders/webhook`,
-              expires: true,
-              expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-            }
-          };
-    
-          const mpResponse = await preference.create(preferenceData);
-    
-          order.externalId = mpResponse.id;
-          await order.save();
-    
-          return { order, paymentLink: mpResponse.init_point };
-    
-        } catch (error) {
-          for (const item of validatedItems) {
-            await Product.findByIdAndUpdate(item.id, { $inc: { stock: item.quantity } });
-          }
-          await Order.findByIdAndDelete(order._id);
-          throw new Error(`Error Mercado Pago: ${error.message}`);
-        }
-      }
+  async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
+    if (!orderItems?.length) throw new Error('El carrito está vacío.');
 
-  // Webhook Handler ACTUALIZADO con lógica de entrega digital
+    // 1. Validaciones
+    let calculatedTotal = 0;
+    const validatedItems = [];
+
+    for (const item of orderItems) {
+      const product = await Product.findById(item.product);
+      if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
+      if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
+      
+      calculatedTotal += product.precio * item.quantity;
+      
+      validatedItems.push({
+        id: item.product.toString(),
+        title: item.name,
+        quantity: Number(item.quantity),
+        unit_price: Number(product.precio),
+        currency_id: 'ARS', 
+        picture_url: item.image,
+        description: product.descripcion?.substring(0, 200)
+      });
+    }
+
+    // 2. Reserva de Stock
+    for (const item of validatedItems) {
+        await Product.findByIdAndUpdate(item.id, {
+            $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
+        });
+    }
+
+    // 3. Crear Orden Local
+    const order = await Order.create({
+      user,
+      orderItems: validatedItems.map(i => ({...i, product: i.id, name: i.title, price: i.unit_price})),
+      shippingAddress,
+      paymentMethod,
+      itemsPrice: calculatedTotal,
+      totalPrice: calculatedTotal,
+      orderStatus: 'pendiente_pago',
+      isPaid: false
+    });
+
+    // 4. Preferencia MP (Checkout Pro)
+    try {
+      const client = getMpClient();
+      const preference = new Preference(client);
+
+      // USAMOS NGROK (BACKEND) COMO PUENTE DE RETORNO
+      const backendUrl = process.env.BACKEND_URL; 
+      if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
+
+      const preferenceData = {
+        body: {
+          items: validatedItems,
+          back_urls: {
+            // Apuntamos al backend, pasando el estado esperado como query param
+            success: `${backendUrl}/api/orders/feedback?status=approved`,
+            failure: `${backendUrl}/api/orders/feedback?status=failure`,
+            pending: `${backendUrl}/api/orders/feedback?status=pending`
+          },
+          auto_return: 'approved',
+          external_reference: order._id.toString(),
+          statement_descriptor: "GOLSTORE",
+          notification_url: `${backendUrl}/api/orders/webhook`,
+          expires: true,
+          expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        }
+      };
+
+      const mpResponse = await preference.create(preferenceData);
+
+      order.externalId = mpResponse.id;
+      await order.save();
+
+      return { order, paymentLink: mpResponse.init_point };
+
+    } catch (error) {
+      // Rollback si falla
+      for (const item of validatedItems) {
+        await Product.findByIdAndUpdate(item.id, { $inc: { stock: item.quantity } });
+      }
+      await Order.findByIdAndDelete(order._id);
+      throw new Error(`Error Mercado Pago: ${error.message}`);
+    }
+  }
+
+  // Webhook Handler con Lógica de Entrega Digital
   async handleWebhook(headers, body, query) {
     const xSignature = headers['x-signature'];
     const dataId = body?.data?.id || query['data.id']; 
@@ -115,9 +116,19 @@ class OrderService {
     if (type !== 'payment') return { status: 'ignored' };
     if (!dataId) throw new Error('Missing payment ID');
 
-    // Validación de Firma (Opcional en dev, obligatoria en prod)
+    // Validación de Firma
     if (process.env.MERCADOPAGO_WEBHOOK_SECRET && xSignature) {
-        // ... (misma lógica de validación de firma que ya tenías)
+      const parts = xSignature.split(',');
+      let ts,QH;
+      parts.forEach(p => {
+        const [k, v] = p.split('=');
+        if (k === 'ts') ts = v;
+        if (k === 'v1') QH = v;
+      });
+      const manifest = `id:${dataId};request-id:${headers['x-request-id']};ts:${ts};`;
+      const hmac = crypto.createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET);
+      const digest = hmac.update(manifest).digest('hex');
+      if (QH !== digest) console.warn('⚠️ Firma de webhook inválida (continuando en dev)');
     }
 
     const client = getMpClient();
@@ -126,32 +137,27 @@ class OrderService {
 
     if (!paymentInfo) throw new Error('Pago no encontrado');
 
-    // Popular los productos para saber si son Digitales o Físicos
+    // Popular productos para saber si son digitales
     const order = await Order.findById(paymentInfo.external_reference)
-      .populate('orderItems.product'); 
+      .populate('orderItems.product');
 
     if (!order) throw new Error('Orden no encontrada');
+    
     if (order.orderStatus === 'pagado') return { status: 'ok' };
 
     if (paymentInfo.status === 'approved') {
       order.isPaid = true;
       order.paidAt = new Date();
       order.orderStatus = 'pagado';
-      order.paymentResult = { 
-        id: String(paymentInfo.id), 
-        status: 'approved', 
-        email: paymentInfo.payer?.email 
-      };
+      order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
       
-      // --- LÓGICA DE ENTREGA DIGITAL ---
+      // --- ENTREGA DE CLAVES DIGITALES ---
       console.log(`📦 Procesando entrega digital para orden ${order._id}...`);
-      
       for (const item of order.orderItems) {
-        // Verificamos si el producto es Digital (accediendo al objeto poblado)
+        // Verificar si es producto digital (usando el objeto poblado)
         if (item.product && item.product.tipo === 'Digital') {
-           // Necesitamos tantas claves como cantidad comprada
            for (let i = 0; i < item.quantity; i++) {
-             // Buscar una clave DISPONIBLE para este producto de forma atómica
+             // Asignar clave atómicamente
              const key = await DigitalKey.findOneAndUpdate(
                { productoId: item.product._id, estado: 'DISPONIBLE' },
                { 
@@ -163,15 +169,14 @@ class OrderService {
              );
 
              if (key) {
-               console.log(`🔑 Clave asignada para ${item.product.nombre}: ${key.clave}`);
+               console.log(`🔑 Clave asignada: ${key.clave}`);
              } else {
-               console.error(`⚠️ ALERTA: No hay stock de claves digitales para ${item.product.nombre}`);
-               // Aquí podrías enviar un email al admin alertando falta de stock real
+               console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
              }
            }
         }
       }
-      // ----------------------------------
+      // -----------------------------------
 
       await order.save();
     } 

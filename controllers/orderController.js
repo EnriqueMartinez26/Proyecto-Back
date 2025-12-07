@@ -1,5 +1,6 @@
 const OrderService = require('../services/orderService');
 const Order = require('../models/Order');
+const DigitalKey = require('../models/DigitalKey');
 
 // Crear orden
 exports.createOrder = async (req, res, next) => {
@@ -27,42 +28,52 @@ exports.receiveWebhook = async (req, res) => {
   }
 };
 
-// --- M脡TODO PUENTE: Redirige de Ngrok a Localhost ---
+// Puente de Redirecci贸n (Ngrok -> Localhost)
 exports.paymentFeedback = (req, res) => {
   const { status, payment_id, external_reference } = req.query;
-  
-  // Aqu铆 definimos a d贸nde va el usuario FINALMENTE (Localhost)
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
   
   let redirectPath = '/checkout/pending';
   if (status === 'approved') redirectPath = '/checkout/success';
   else if (status === 'failure' || status === 'rejected') redirectPath = '/checkout/failure';
 
-  // Construimos la URL final con los par谩metros
   const destination = new URL(`${frontendUrl}${redirectPath}`);
   if (payment_id) destination.searchParams.append('payment_id', payment_id);
   if (external_reference) destination.searchParams.append('external_reference', external_reference);
   
-  console.log(`泶� Redirigiendo usuario (Puente) a: ${destination.toString()}`);
-  
-  // Redirecci贸n del navegador
+  console.log(`馃攢 Redirigiendo usuario (Puente) a: ${destination.toString()}`);
   res.redirect(destination.toString());
 };
 
-// M茅todos de lectura (sin cambios)
+// Obtener 贸rdenes del usuario (Con Claves Digitales)
+exports.getUserOrders = async (req, res, next) => {
+  try {
+    const orders = await Order.find({ user: req.user._id })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Adjuntar claves digitales si la orden est谩 pagada
+    const enrichedOrders = await Promise.all(orders.map(async (order) => {
+      if (order.isPaid) {
+        const keys = await DigitalKey.find({ pedidoId: order._id })
+          .select('clave productoId')
+          .lean();
+        return { ...order, digitalKeys: keys };
+      }
+      return order;
+    }));
+
+    res.json({ success: true, count: enrichedOrders.length, orders: enrichedOrders });
+  } catch (error) { next(error); }
+};
+
+// M茅todos restantes (sin cambios de l贸gica, pero incluidos completos)
 exports.getOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id).populate('user', 'name email').populate('orderItems.product', 'name price');
     if (!order) return res.status(404).json({ success: false, message: 'Orden no encontrada' });
     if (order.user._id.toString() !== req.user._id.toString() && req.user.role !== 'admin') return res.status(403).json({ success: false });
     res.json({ success: true, order });
-  } catch (error) { next(error); }
-};
-
-exports.getUserOrders = async (req, res, next) => {
-  try {
-    const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 });
-    res.json({ success: true, count: orders.length, orders });
   } catch (error) { next(error); }
 };
 
