@@ -68,7 +68,6 @@ class OrderService {
       const client = getMpClient();
       const preference = new Preference(client);
 
-      // USAMOS NGROK (BACKEND) COMO PUENTE DE RETORNO
       const backendUrl = process.env.BACKEND_URL; 
       if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
 
@@ -76,7 +75,6 @@ class OrderService {
         body: {
           items: validatedItems,
           back_urls: {
-            // Apuntamos al backend, pasando el estado esperado como query param
             success: `${backendUrl}/api/orders/feedback?status=approved`,
             failure: `${backendUrl}/api/orders/feedback?status=failure`,
             pending: `${backendUrl}/api/orders/feedback?status=pending`
@@ -95,10 +93,16 @@ class OrderService {
       order.externalId = mpResponse.id;
       await order.save();
 
-      return { order, paymentLink: mpResponse.init_point };
+      // --- FIX CRÍTICO: FORZAR SANDBOX EN DESARROLLO ---
+      // Usamos sandbox_init_point para que MP acepte al Usuario de Prueba
+      const link = process.env.NODE_ENV === 'production' 
+          ? mpResponse.init_point 
+          : mpResponse.sandbox_init_point;
+
+      return { order, paymentLink: link };
 
     } catch (error) {
-      // Rollback si falla
+      // Rollback
       for (const item of validatedItems) {
         await Product.findByIdAndUpdate(item.id, { $inc: { stock: item.quantity } });
       }
@@ -107,7 +111,7 @@ class OrderService {
     }
   }
 
-  // Webhook Handler con Lógica de Entrega Digital
+  // Webhook Handler
   async handleWebhook(headers, body, query) {
     const xSignature = headers['x-signature'];
     const dataId = body?.data?.id || query['data.id']; 
@@ -137,12 +141,10 @@ class OrderService {
 
     if (!paymentInfo) throw new Error('Pago no encontrado');
 
-    // Popular productos para saber si son digitales
     const order = await Order.findById(paymentInfo.external_reference)
       .populate('orderItems.product');
 
     if (!order) throw new Error('Orden no encontrada');
-    
     if (order.orderStatus === 'pagado') return { status: 'ok' };
 
     if (paymentInfo.status === 'approved') {
@@ -151,32 +153,21 @@ class OrderService {
       order.orderStatus = 'pagado';
       order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
       
-      // --- ENTREGA DE CLAVES DIGITALES ---
+      // Entrega de Claves
       console.log(`📦 Procesando entrega digital para orden ${order._id}...`);
       for (const item of order.orderItems) {
-        // Verificar si es producto digital (usando el objeto poblado)
         if (item.product && item.product.tipo === 'Digital') {
            for (let i = 0; i < item.quantity; i++) {
-             // Asignar clave atómicamente
              const key = await DigitalKey.findOneAndUpdate(
                { productoId: item.product._id, estado: 'DISPONIBLE' },
-               { 
-                 estado: 'VENDIDA', 
-                 pedidoId: order._id, 
-                 fechaVenta: new Date() 
-               },
+               { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
                { new: true }
              );
-
-             if (key) {
-               console.log(`🔑 Clave asignada: ${key.clave}`);
-             } else {
-               console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
-             }
+             if (key) console.log(`🔑 Clave asignada: ${key.clave}`);
+             else console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
            }
         }
       }
-      // -----------------------------------
 
       await order.save();
     } 
