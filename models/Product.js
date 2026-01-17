@@ -39,7 +39,13 @@ const productSchema = new mongoose.Schema({
   },
   imagenUrl: {
     type: String,
-    trim: true
+    trim: true,
+    default: 'https://placehold.co/600x400?text=No+Image'
+  },
+  trailerUrl: {
+    type: String,
+    trim: true,
+    default: ''
   },
   calificacion: {
     type: Number,

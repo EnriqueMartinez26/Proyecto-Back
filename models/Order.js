@@ -36,15 +36,15 @@ const orderSchema = new mongoose.Schema({
     email: String
   },
   // ID de la Preferencia de Mercado Pago (para retomar pagos abandonados)
-  externalId: { 
-    type: String, 
-    unique: true, 
-    sparse: true 
+  externalId: {
+    type: String,
+    unique: true,
+    sparse: true
   },
   itemsPrice: { type: Number, required: true, default: 0.0 },
   shippingPrice: { type: Number, required: true, default: 0.0 },
   totalPrice: { type: Number, required: true, default: 0.0 },
-  
+
   orderStatus: {
     type: String,
     enum: ['pendiente_pago', 'pagado', 'procesando', 'enviado', 'entregado', 'cancelado', 'reembolsado'],
@@ -56,5 +56,8 @@ const orderSchema = new mongoose.Schema({
   deliveredAt: Date,
   createdAt: { type: Date, default: Date.now }
 });
+
+// Index para optimizar getUserOrders
+orderSchema.index({ user: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Order', orderSchema);

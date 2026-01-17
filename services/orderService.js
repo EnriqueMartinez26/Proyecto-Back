@@ -10,7 +10,7 @@ const getMpClient = () => {
     if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
       throw new Error("FATAL: MERCADOPAGO_ACCESS_TOKEN no configurado.");
     }
-    mpClient = new MercadoPagoConfig({ 
+    mpClient = new MercadoPagoConfig({
       accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
       options: { timeout: 5000 }
     });
@@ -30,15 +30,15 @@ class OrderService {
       const product = await Product.findById(item.product);
       if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
       if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
-      
+
       calculatedTotal += product.precio * item.quantity;
-      
+
       validatedItems.push({
         id: item.product.toString(),
         title: item.name,
         quantity: Number(item.quantity),
         unit_price: Number(product.precio),
-        currency_id: 'ARS', 
+        currency_id: 'ARS',
         picture_url: item.image,
         description: product.descripcion?.substring(0, 200)
       });
@@ -46,15 +46,15 @@ class OrderService {
 
     // 2. Reserva de Stock
     for (const item of validatedItems) {
-        await Product.findByIdAndUpdate(item.id, {
-            $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
-        });
+      await Product.findByIdAndUpdate(item.id, {
+        $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
+      });
     }
 
     // 3. Crear Orden Local
     const order = await Order.create({
       user,
-      orderItems: validatedItems.map(i => ({...i, product: i.id, name: i.title, price: i.unit_price})),
+      orderItems: validatedItems.map(i => ({ ...i, product: i.id, name: i.title, price: i.unit_price })),
       shippingAddress,
       paymentMethod,
       itemsPrice: calculatedTotal,
@@ -68,7 +68,7 @@ class OrderService {
       const client = getMpClient();
       const preference = new Preference(client);
 
-      const backendUrl = process.env.BACKEND_URL; 
+      const backendUrl = process.env.BACKEND_URL;
       if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
 
       const preferenceData = {
@@ -95,9 +95,11 @@ class OrderService {
 
       // --- FIX CRÍTICO: FORZAR SANDBOX EN DESARROLLO ---
       // Usamos sandbox_init_point para que MP acepte al Usuario de Prueba
-      const link = process.env.NODE_ENV === 'production' 
-          ? mpResponse.init_point 
-          : mpResponse.sandbox_init_point;
+      const link = process.env.NODE_ENV === 'production'
+        ? mpResponse.init_point
+        : mpResponse.sandbox_init_point;
+
+      return { order, paymentLink: link };
 
       return { order, paymentLink: link };
 
@@ -111,10 +113,40 @@ class OrderService {
     }
   }
 
+  // Obtener órdenes de usuario con lógica de negocio (Claves, Imágenes)
+  async getUserOrders(userId) {
+    const orders = await Order.find({ user: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const { DEFAULT_IMAGE } = require('../utils/constants');
+
+    // Adjuntar claves digitales si la orden está pagada y asegurar imagenes
+    const enrichedOrders = await Promise.all(orders.map(async (order) => {
+      // Ensure items have images
+      if (order.orderItems) {
+        order.orderItems = order.orderItems.map(item => ({
+          ...item,
+          image: item.image || DEFAULT_IMAGE
+        }));
+      }
+
+      if (order.isPaid) {
+        const keys = await DigitalKey.find({ pedidoId: order._id })
+          .select('clave productoId')
+          .lean();
+        return { ...order, digitalKeys: keys };
+      }
+      return order;
+    }));
+
+    return enrichedOrders;
+  }
+
   // Webhook Handler
   async handleWebhook(headers, body, query) {
     const xSignature = headers['x-signature'];
-    const dataId = body?.data?.id || query['data.id']; 
+    const dataId = body?.data?.id || query['data.id'];
     const type = body?.type || query.type;
 
     if (type !== 'payment') return { status: 'ignored' };
@@ -123,7 +155,7 @@ class OrderService {
     // Validación de Firma
     if (process.env.MERCADOPAGO_WEBHOOK_SECRET && xSignature) {
       const parts = xSignature.split(',');
-      let ts,QH;
+      let ts, QH;
       parts.forEach(p => {
         const [k, v] = p.split('=');
         if (k === 'ts') ts = v;
@@ -152,26 +184,26 @@ class OrderService {
       order.paidAt = new Date();
       order.orderStatus = 'pagado';
       order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
-      
+
       // Entrega de Claves
       console.log(`📦 Procesando entrega digital para orden ${order._id}...`);
       for (const item of order.orderItems) {
         if (item.product && item.product.tipo === 'Digital') {
-           for (let i = 0; i < item.quantity; i++) {
-             const key = await DigitalKey.findOneAndUpdate(
-               { productoId: item.product._id, estado: 'DISPONIBLE' },
-               { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
-               { new: true }
-             );
-             if (key) console.log(`🔑 Clave asignada: ${key.clave}`);
-             else console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
-           }
+          for (let i = 0; i < item.quantity; i++) {
+            const key = await DigitalKey.findOneAndUpdate(
+              { productoId: item.product._id, estado: 'DISPONIBLE' },
+              { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
+              { new: true }
+            );
+            if (key) console.log(`🔑 Clave asignada: ${key.clave}`);
+            else console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
+          }
         }
       }
 
       await order.save();
-    } 
-    
+    }
+
     return { status: 'ok', state: paymentInfo.status };
   }
 }

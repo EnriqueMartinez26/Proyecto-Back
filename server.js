@@ -21,11 +21,11 @@ app.use(helmet());
 
 // Rate Limiting
 const limiter = rateLimit({
-  windowMs: 10 * 60 * 1000, 
-  max: 100, 
-  standardHeaders: true,
+  windowMs: 15 * 60 * 1000, 
+  max: 1000, 
+  message: { success: false, message: "Demasiadas peticiones, intenta mÃ¡s tarde." },
+  standardHeaders: true, 
   legacyHeaders: false,
-  message: { success: false, message: "Demasiadas peticiones, intenta mÃ¡s tarde." }
 });
 app.use('/api', limiter);
 
@@ -88,7 +88,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    logger.info(`í»¡ï¸  Seguridad Activada (Helmet + RateLimit)`);
+    logger.info(`ï¿½ï¿½ï¿½ï¸  Seguridad Activada (Helmet + RateLimit)`);
     logger.info(`âœ… Servidor corriendo en puerto ${PORT}`);
-    logger.info(`í´§ Modo: ${process.env.NODE_ENV}`);
+    logger.info(`ï¿½ï¿½ï¿½ Modo: ${process.env.NODE_ENV}`);
 });

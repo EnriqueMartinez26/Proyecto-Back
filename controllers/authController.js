@@ -7,14 +7,14 @@ const sendTokenResponse = (user, statusCode, res) => {
 
     // Configuración de Cookie adaptativa
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
     const options = {
         expires: new Date(Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000),
         httpOnly: true,
         // En desarrollo (IPs locales), secure debe ser false y sameSite 'lax' o 'none' (pero 'none' requiere secure)
         // Para máxima compatibilidad local usamos 'lax' y secure false.
-        secure: isProduction, 
-        sameSite: isProduction ? 'strict' : 'lax' 
+        secure: isProduction,
+        sameSite: isProduction ? 'strict' : 'lax'
     };
 
     res.status(statusCode)
@@ -36,14 +36,15 @@ exports.register = async (req, res, next) => {
         if (!name || !email || !password) {
             return res.status(400).json({ success: false, message: 'Faltan datos requeridos' });
         }
-        await AuthService.register({ name, email, password });
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-        const user = await User.create({ name, email, password: hashedPassword });
+
+        // Logic moved to Service
+        const user = await AuthService.register({ name, email, password });
+
         sendTokenResponse(user, 201, res);
     } catch (error) {
-        if (error.message === 'El email ya está registrado') {
-             return res.status(400).json({ success: false, message: error.message });
+        // Generic error handling is now partly in service, but we catch others here
+        if (error.message === 'Credenciales inválidas') {
+            return res.status(400).json({ success: false, message: 'Credenciales inválidas' });
         }
         next(error);
     }

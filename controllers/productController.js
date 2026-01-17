@@ -30,9 +30,6 @@ exports.getProduct = async (req, res, next) => {
     const product = await ProductService.getProductById(req.params.id);
     res.status(200).json({ success: true, data: product });
   } catch (error) {
-    if (error.message === 'ProductNotFound') {
-      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
-    }
     next(error);
   }
 };
@@ -53,9 +50,6 @@ exports.updateProduct = async (req, res, next) => {
     const product = await ProductService.updateProduct(req.params.id, req.body);
     res.status(200).json({ success: true, data: product });
   } catch (error) {
-    if (error.message === 'ProductNotFound') {
-      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
-    }
     next(error);
   }
 };
@@ -66,9 +60,6 @@ exports.deleteProduct = async (req, res, next) => {
     await ProductService.deleteProduct(req.params.id);
     res.status(200).json({ success: true, message: 'Producto eliminado' });
   } catch (error) {
-    if (error.message === 'ProductNotFound') {
-      return res.status(404).json({ success: false, message: 'Producto no encontrado' });
-    }
     next(error);
   }
 };

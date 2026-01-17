@@ -1,10 +1,23 @@
 const Wishlist = require('../models/Wishlist');
+const ProductService = require('../services/productService');
 
 exports.getWishlist = async (req, res) => {
   try {
-    let wishlist = await Wishlist.findOne({ usuarioId: req.params.userId }).populate('productos.productoId');
+    let wishlist = await Wishlist.findOne({ usuarioId: req.params.userId })
+      .populate({
+        path: 'productos.productoId',
+        populate: [
+          { path: 'plataformaId', select: 'nombre' },
+          { path: 'generoId', select: 'nombre' }
+        ]
+      });
+
     if (!wishlist) return res.json({ success: true, wishlist: [] });
-    const productos = wishlist.productos.filter(item => item.productoId).map(item => item.productoId);
+
+    const productos = wishlist.productos
+      .filter(item => item.productoId)
+      .map(item => ProductService.transformDTO(item.productoId));
+
     res.json({ success: true, wishlist: productos });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };

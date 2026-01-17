@@ -1,18 +1,19 @@
 const OrderService = require('../services/orderService');
 const Order = require('../models/Order');
 const DigitalKey = require('../models/DigitalKey');
+const { DEFAULT_IMAGE } = require('../utils/constants');
 
 // Crear orden
 exports.createOrder = async (req, res, next) => {
   try {
     const result = await OrderService.createOrder({
-      user: req.user._id, 
+      user: req.user._id,
       ...req.body
     });
-    res.status(201).json({ 
+    res.status(201).json({
       success: true,
       order: result.order,
-      paymentLink: result.paymentLink 
+      paymentLink: result.paymentLink
     });
   } catch (error) { next(error); }
 };
@@ -24,6 +25,10 @@ exports.receiveWebhook = async (req, res) => {
     res.status(200).send('OK');
   } catch (error) {
     console.error('Webhook Error:', error.message);
+    // Si es error de validación (ej: falta ID), devolver 400 para que MP no reintente
+    if (error.message === 'Missing payment ID' || error.message === 'Pago no encontrado') {
+      return res.status(400).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message });
   }
 };
@@ -32,7 +37,7 @@ exports.receiveWebhook = async (req, res) => {
 exports.paymentFeedback = (req, res) => {
   const { status, payment_id, external_reference } = req.query;
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
-  
+
   let redirectPath = '/checkout/pending';
   if (status === 'approved') redirectPath = '/checkout/success';
   else if (status === 'failure' || status === 'rejected') redirectPath = '/checkout/failure';
@@ -40,7 +45,7 @@ exports.paymentFeedback = (req, res) => {
   const destination = new URL(`${frontendUrl}${redirectPath}`);
   if (payment_id) destination.searchParams.append('payment_id', payment_id);
   if (external_reference) destination.searchParams.append('external_reference', external_reference);
-  
+
   console.log(`🔀 Redirigiendo usuario (Puente) a: ${destination.toString()}`);
   res.redirect(destination.toString());
 };
@@ -48,21 +53,7 @@ exports.paymentFeedback = (req, res) => {
 // Obtener órdenes del usuario (Con Claves Digitales)
 exports.getUserOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find({ user: req.user._id })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Adjuntar claves digitales si la orden está pagada
-    const enrichedOrders = await Promise.all(orders.map(async (order) => {
-      if (order.isPaid) {
-        const keys = await DigitalKey.find({ pedidoId: order._id })
-          .select('clave productoId')
-          .lean();
-        return { ...order, digitalKeys: keys };
-      }
-      return order;
-    }));
-
+    const enrichedOrders = await OrderService.getUserOrders(req.user._id);
     res.json({ success: true, count: enrichedOrders.length, orders: enrichedOrders });
   } catch (error) { next(error); }
 };
@@ -97,7 +88,7 @@ exports.updateOrderStatus = async (req, res, next) => {
 exports.updateOrderToPaid = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
-    order.isPaid = true; 
+    order.isPaid = true;
     order.paidAt = Date.now();
     await order.save();
     res.json({ success: true, order });

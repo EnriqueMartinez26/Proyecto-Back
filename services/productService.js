@@ -1,12 +1,13 @@
 const Product = require('../models/Product');
-const Platform = require('../models/Platform'); // Asegúrate de tener estos modelos importados
+const Platform = require('../models/Platform');
 const Genre = require('../models/Genre');
+const { DEFAULT_IMAGE, UNKNOWN_PRODUCT } = require('../utils/constants');
 
 // --- PRIVATE MAPPER (DTO TRANSFORMER) ---
 // Transforma el documento Mongoose (Español) a DTO API (Inglés)
 const toResponseDTO = (productDoc) => {
     if (!productDoc) return null;
-    
+
     const p = productDoc.toObject ? productDoc.toObject() : productDoc;
 
     return {
@@ -15,24 +16,53 @@ const toResponseDTO = (productDoc) => {
         description: p.descripcion,
         price: p.precio,
         // Manejo defensivo: si no se pudo poblar, devuelve null o estructura básica
-        platform: p.plataformaId && p.plataformaId.nombre ? { 
-            id: p.plataformaId._id, 
-            name: p.plataformaId.nombre 
+        platform: p.plataformaId && p.plataformaId.nombre ? {
+            id: p.plataformaId._id,
+            name: p.plataformaId.nombre
         } : { id: p.plataformaId, name: 'Unknown' },
-        
-        genre: p.generoId && p.generoId.nombre ? { 
-            id: p.generoId._id, 
-            name: p.generoId.nombre 
+
+        genre: p.generoId && p.generoId.nombre ? {
+            id: p.generoId._id,
+            name: p.generoId.nombre
         } : { id: p.generoId, name: 'Unknown' },
 
         type: p.tipo === 'Fisico' ? 'Physical' : 'Digital', // Mapeo de Enum
         releaseDate: p.fechaLanzamiento,
         developer: p.desarrollador,
-        imageId: p.imagenUrl,
+        imageId: p.imagenUrl || DEFAULT_IMAGE,
+        trailerUrl: p.trailerUrl || '',
         rating: p.calificacion,
         stock: p.stock,
         active: p.activo
     };
+};
+
+// Exportar el mapper para uso en otros controladores (Cart, Wishlist, Order)
+exports.transformDTO = toResponseDTO;
+
+// --- PRIVATE MAPPER (DTO TO MODEL) ---
+const mapToModel = (data) => {
+    const modelData = { ...data }; // Copy original data
+
+    // Map English keys to Mongoose Schema keys
+    if (data.name !== undefined) modelData.nombre = data.name;
+    if (data.description !== undefined) modelData.descripcion = data.description;
+    if (data.price !== undefined) modelData.precio = data.price;
+    if (data.platform !== undefined) modelData.plataformaId = data.platform;
+    if (data.genre !== undefined) modelData.generoId = data.genre;
+    if (data.type !== undefined) {
+        // Map English Enum to Spanish Enum if necessary
+        modelData.tipo = data.type === 'Physical' ? 'Fisico' : data.type;
+    }
+    if (data.releaseDate !== undefined) modelData.fechaLanzamiento = data.releaseDate;
+    if (data.developer !== undefined) modelData.desarrollador = data.developer;
+    if (data.imageId !== undefined) modelData.imagenUrl = data.imageId;
+    if (data.trailerUrl !== undefined) modelData.trailerUrl = data.trailerUrl;
+    if (data.rating !== undefined) modelData.calificacion = data.rating;
+    if (data.stock !== undefined) modelData.stock = data.stock;
+    if (data.active !== undefined) modelData.activo = data.active;
+
+    return modelData;
 };
 
 // --- SERVICIO PÚBLICO ---
@@ -48,29 +78,35 @@ exports.getProducts = async (query = {}) => {
     // Asumimos que vienen como IDs por ahora.
     if (platform) filter.plataformaId = platform;
     if (genre) filter.generoId = genre;
-    
+
     if (minPrice || maxPrice) {
         filter.precio = {};
         if (minPrice) filter.precio.$gte = Number(minPrice);
         if (maxPrice) filter.precio.$lte = Number(maxPrice);
     }
 
-    // Ejecución con Populate para obtener objetos completos
+    // Validación de paginación
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+
+    // Ejecución con Populate y Lean para performance
     const products = await Product.find(filter)
-        .populate('plataformaId', 'nombre') // Traer solo nombre e ID
+        .populate('plataformaId', 'nombre')
         .populate('generoId', 'nombre')
-        .skip((page - 1) * limit)
-        .limit(Number(limit))
-        .sort({ createdAt: -1 });
+        .skip((pageNum - 1) * limitNum)
+        .limit(limitNum)
+        .sort({ createdAt: -1 })
+        .lean();
 
     const count = await Product.countDocuments(filter);
 
     return {
-        data: products.map(toResponseDTO), // Aplicar Mapper
-        pagination: {
+        data: products.map(toResponseDTO),
+        meta: {
             total: count,
-            page: Number(page),
-            pages: Math.ceil(count / limit)
+            page: pageNum,
+            limit: limitNum,
+            totalPages: Math.ceil(count / limitNum)
         }
     };
 };
@@ -78,25 +114,32 @@ exports.getProducts = async (query = {}) => {
 exports.getProductById = async (id) => {
     const product = await Product.findById(id)
         .populate('plataformaId', 'nombre')
-        .populate('generoId', 'nombre');
-        
-    if (!product) throw new Error('ProductNotFound');
+        .populate('generoId', 'nombre')
+        .lean();
+
+    if (!product) {
+        const error = new Error('Producto no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
     return toResponseDTO(product);
 };
 
 exports.createProduct = async (data) => {
-    // Aquí podrías agregar validación de negocio extra
-    const product = await Product.create(data);
+    const modelData = mapToModel(data);
+    const product = await Product.create(modelData);
+
     // Recargar para poblar y devolver DTO completo
     const populatedProduct = await Product.findById(product._id)
         .populate('plataformaId', 'nombre')
         .populate('generoId', 'nombre');
-        
+
     return toResponseDTO(populatedProduct);
 };
 
 exports.updateProduct = async (id, data) => {
-    const product = await Product.findByIdAndUpdate(id, data, { new: true, runValidators: true })
+    const modelData = mapToModel(data);
+    const product = await Product.findByIdAndUpdate(id, modelData, { new: true, runValidators: true })
         .populate('plataformaId', 'nombre')
         .populate('generoId', 'nombre');
 
