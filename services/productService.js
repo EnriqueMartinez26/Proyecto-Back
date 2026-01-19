@@ -15,15 +15,19 @@ const toResponseDTO = (productDoc) => {
         name: p.nombre,
         description: p.descripcion,
         price: p.precio,
-        // Manejo defensivo: si no se pudo poblar, devuelve null o estructura básica
-        platform: p.plataformaId && p.plataformaId.nombre ? {
-            id: p.plataformaId._id,
-            name: p.plataformaId.nombre
+        // Unification: Use populated virtuals (platformObj/genreObj)
+        platform: p.platformObj ? {
+            id: p.platformObj.id,
+            name: p.platformObj.nombre,
+            imageId: p.platformObj.imageId,
+            active: p.platformObj.activo
         } : { id: p.plataformaId, name: 'Unknown' },
 
-        genre: p.generoId && p.generoId.nombre ? {
-            id: p.generoId._id,
-            name: p.generoId.nombre
+        genre: p.genreObj ? {
+            id: p.genreObj.id,
+            name: p.genreObj.nombre,
+            imageId: p.genreObj.imageId,
+            active: p.genreObj.activo
         } : { id: p.generoId, name: 'Unknown' },
 
         type: p.tipo === 'Fisico' ? 'Physical' : 'Digital', // Mapeo de Enum
@@ -91,8 +95,8 @@ exports.getProducts = async (query = {}) => {
 
     // Ejecución con Populate y Lean para performance
     const products = await Product.find(filter)
-        .populate('plataformaId', 'nombre')
-        .populate('generoId', 'nombre')
+        .populate('platformObj')
+        .populate('genreObj')
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum)
         .sort({ createdAt: -1 })
@@ -113,8 +117,8 @@ exports.getProducts = async (query = {}) => {
 
 exports.getProductById = async (id) => {
     const product = await Product.findById(id)
-        .populate('plataformaId', 'nombre')
-        .populate('generoId', 'nombre')
+        .populate('platformObj')
+        .populate('genreObj')
         .lean();
 
     if (!product) {
@@ -131,8 +135,8 @@ exports.createProduct = async (data) => {
 
     // Recargar para poblar y devolver DTO completo
     const populatedProduct = await Product.findById(product._id)
-        .populate('plataformaId', 'nombre')
-        .populate('generoId', 'nombre');
+        .populate('platformObj')
+        .populate('genreObj');
 
     return toResponseDTO(populatedProduct);
 };
@@ -140,8 +144,8 @@ exports.createProduct = async (data) => {
 exports.updateProduct = async (id, data) => {
     const modelData = mapToModel(data);
     const product = await Product.findByIdAndUpdate(id, modelData, { new: true, runValidators: true })
-        .populate('plataformaId', 'nombre')
-        .populate('generoId', 'nombre');
+        .populate('platformObj')
+        .populate('genreObj');
 
     if (!product) throw new Error('ProductNotFound');
     return toResponseDTO(product);
@@ -151,4 +155,12 @@ exports.deleteProduct = async (id) => {
     const product = await Product.findByIdAndUpdate(id, { activo: false }, { new: true });
     if (!product) throw new Error('ProductNotFound');
     return true;
+};
+
+exports.deleteProducts = async (ids) => {
+    const result = await Product.updateMany(
+        { _id: { $in: ids } },
+        { activo: false }
+    );
+    return result;
 };

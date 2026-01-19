@@ -7,8 +7,8 @@ exports.getWishlist = async (req, res) => {
       .populate({
         path: 'productos.productoId',
         populate: [
-          { path: 'plataformaId', select: 'nombre' },
-          { path: 'generoId', select: 'nombre' }
+          { path: 'platformObj' },
+          { path: 'genreObj' }
         ]
       });
 

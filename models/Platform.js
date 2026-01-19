@@ -15,6 +15,10 @@ const platformSchema = new mongoose.Schema({
   activo: {
     type: Boolean,
     default: true
+  },
+  imageId: {
+    type: String,
+    default: 'https://placehold.co/600x400?text=No+Image'
   }
 }, {
   timestamps: true

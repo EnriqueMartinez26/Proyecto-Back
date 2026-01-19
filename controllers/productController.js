@@ -63,3 +63,41 @@ exports.deleteProduct = async (req, res, next) => {
     next(error);
   }
 };
+
+// Eliminar múltiples productos
+exports.deleteProducts = async (req, res, next) => {
+  try {
+    let ids = [];
+
+    // 1. Array en body directo
+    if (Array.isArray(req.body) && req.body.length > 0) {
+      ids = req.body;
+    }
+    // 2. Objeto con propiedad ids
+    else if (req.body.ids && Array.isArray(req.body.ids)) {
+      ids = req.body.ids;
+    }
+    // 3. Query param
+    else if (req.query.ids) {
+      ids = Array.isArray(req.query.ids)
+        ? req.query.ids
+        : req.query.ids.split(',').filter(Boolean);
+    }
+
+    if (!ids || ids.length === 0) {
+      const error = new Error('No se proporcionaron IDs para eliminar');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const result = await ProductService.deleteProducts(ids);
+
+    res.status(200).json({
+      success: true,
+      message: `${result.modifiedCount} productos eliminados`,
+      ids
+    });
+  } catch (error) {
+    next(error);
+  }
+};

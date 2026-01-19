@@ -69,7 +69,24 @@ const productSchema = new mongoose.Schema({
     default: true
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Virtuals for populating based on custom string IDs
+productSchema.virtual('platformObj', {
+  ref: 'Platform',
+  localField: 'plataformaId',
+  foreignField: 'id',
+  justOne: true
+});
+
+productSchema.virtual('genreObj', {
+  ref: 'Genre',
+  localField: 'generoId',
+  foreignField: 'id',
+  justOne: true
 });
 
 // Índices para búsqueda y filtrado

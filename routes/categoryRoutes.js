@@ -1,17 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { 
-  getCategories, 
-  getCategory, 
-  createCategory, 
-  updateCategory, 
-  deleteCategory 
+const {
+  getCategories,
+  getCategory,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  deleteCategories
 } = require('../controllers/categoryController');
+
+const { protect, authorize } = require('../middlewares/auth');
 
 router.get('/', getCategories);
 router.get('/:id', getCategory);
-router.post('/', createCategory);
-router.put('/:id', updateCategory);
-router.delete('/:id', deleteCategory);
+
+// Rutas protegidas
+router.post('/', protect, authorize('admin'), createCategory);
+router.put('/:id', protect, authorize('admin'), updateCategory);
+router.delete('/multi', protect, authorize('admin'), deleteCategories);
+router.delete('/:id', protect, authorize('admin'), deleteCategory);
 
 module.exports = router;
