@@ -73,6 +73,7 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/platforms', require('./routes/platformRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

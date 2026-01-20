@@ -106,17 +106,17 @@ exports.createPlatform = async (req, res, next) => {
     }
 };
 
-// Delete platform
+// Delete platform (Soft Delete)
 exports.deletePlatform = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Try deleting by custom ID first
-        let platform = await Platform.findOneAndDelete({ id });
+        // Try soft deleting by custom ID first
+        let platform = await Platform.findOneAndUpdate({ id }, { activo: false }, { new: true });
 
-        // If not found and it looks like a MongoID, try deleting by _id
+        // If not found and it looks like a MongoID, try by _id
         if (!platform && id.match(/^[0-9a-fA-F]{24}$/)) {
-            platform = await Platform.findByIdAndDelete(id);
+            platform = await Platform.findByIdAndUpdate(id, { activo: false }, { new: true });
         }
 
         if (!platform) {
@@ -125,18 +125,15 @@ exports.deletePlatform = async (req, res, next) => {
             throw error;
         }
 
-        res.status(200).json({ success: true, message: 'Plataforma eliminada', id });
+        res.status(200).json({ success: true, message: 'Plataforma eliminada (Soft Delete)', id });
     } catch (error) {
         next(error);
     }
 };
 
-// Delete multiple platforms
+// Delete multiple platforms (Soft Delete)
 exports.deletePlatforms = async (req, res, next) => {
     try {
-        console.log('🔍 DELETE /MULTI Request Body:', req.body);
-        console.log('🔍 DELETE /MULTI Query:', req.query);
-
         let ids = [];
 
         // 1. Try body as array
@@ -155,32 +152,27 @@ exports.deletePlatforms = async (req, res, next) => {
         }
 
         if (!ids || ids.length === 0) {
-            console.warn('❌ No se encontraron IDs en Body ni Query');
-            if (Object.keys(req.body).length === 0) {
-                const error = new Error('Body vacío. Si usas axios delete, envía: { data: ids } o ?ids=...');
-                error.statusCode = 400;
-                throw error;
-            }
-
-            const error = new Error('Formato de datos inválido. Se esperaba un array de IDs.');
+            const error = new Error('No se proporcionaron IDs para eliminar');
             error.statusCode = 400;
             throw error;
         }
 
-        // Delete using either custom 'id' or Mongo '_id'
         const mongoIds = ids.filter(id => id.match(/^[0-9a-fA-F]{24}$/));
         const customIds = ids;
 
-        const result = await Platform.deleteMany({
-            $or: [
-                { id: { $in: customIds } },
-                { _id: { $in: mongoIds } }
-            ]
-        });
+        const result = await Platform.updateMany(
+            {
+                $or: [
+                    { id: { $in: customIds } },
+                    { _id: { $in: mongoIds } }
+                ]
+            },
+            { activo: false }
+        );
 
         res.status(200).json({
             success: true,
-            message: `${result.deletedCount} plataformas eliminadas`,
+            message: `${result.modifiedCount} plataformas eliminadas (Soft Delete)`,
             ids
         });
     } catch (error) {

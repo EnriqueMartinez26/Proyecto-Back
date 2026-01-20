@@ -19,9 +19,11 @@ router.get('/feedback', paymentFeedback); // <--- Nueva ruta pública
 // Rutas Protegidas
 router.post('/', protect, createOrder);
 router.get('/', protect, authorize('admin'), getAllOrders);
-router.get('/myorders/:userId', protect, getUserOrders);
+router.get('/user/:userId', protect, getUserOrders); // New Requirement
+router.get('/myorders', protect, getUserOrders); // Keep backward compat if needed, simplifies to same controller
 router.get('/:id', protect, getOrder);
 router.put('/:id/pay', protect, updateOrderToPaid);
-router.put('/:id/deliver', protect, authorize('admin'), updateOrderStatus);
+router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus); // New Requirement (PATCH)
+router.put('/:id/deliver', protect, authorize('admin'), updateOrderStatus); // Legacy support
 
 module.exports = router;

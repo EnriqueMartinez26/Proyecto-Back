@@ -59,7 +59,8 @@ class OrderService {
       paymentMethod,
       itemsPrice: calculatedTotal,
       totalPrice: calculatedTotal,
-      orderStatus: 'pendiente_pago',
+      totalPrice: calculatedTotal,
+      orderStatus: 'pending',
       isPaid: false
     });
 
@@ -99,7 +100,11 @@ class OrderService {
         ? mpResponse.init_point
         : mpResponse.sandbox_init_point;
 
-      return { order, paymentLink: link };
+      return {
+        orderId: order._id, // Requirement: return orderId
+        paymentLink: link,
+        order // Return full order too just in case
+      };
 
       return { order, paymentLink: link };
 
@@ -182,7 +187,7 @@ class OrderService {
     if (paymentInfo.status === 'approved') {
       order.isPaid = true;
       order.paidAt = new Date();
-      order.orderStatus = 'pagado';
+      order.orderStatus = 'processing';
       order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
 
       // Entrega de Claves

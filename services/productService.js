@@ -78,10 +78,16 @@ exports.getProducts = async (query = {}) => {
     if (search) {
         filter.$text = { $search: search };
     }
-    // Nota: Si platform/genre vienen como nombres, habría que buscar sus IDs primero.
-    // Asumimos que vienen como IDs por ahora.
-    if (platform) filter.plataformaId = platform;
-    if (genre) filter.generoId = genre;
+
+    // Support comma-separated IDs for Multi-Select
+    if (platform) {
+        const platforms = platform.split(',').filter(Boolean);
+        if (platforms.length > 0) filter.plataformaId = { $in: platforms };
+    }
+    if (genre) {
+        const genres = genre.split(',').filter(Boolean);
+        if (genres.length > 0) filter.generoId = { $in: genres };
+    }
 
     if (minPrice || maxPrice) {
         filter.precio = {};

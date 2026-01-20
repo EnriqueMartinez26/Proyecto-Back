@@ -18,10 +18,10 @@ const orderSchema = new mongoose.Schema({
     image: String
   }],
   shippingAddress: {
+    fullName: { type: String, required: true },
     street: { type: String, required: true },
     city: { type: String, required: true },
-    state: { type: String, required: true },
-    zipCode: { type: String, required: true },
+    zip: { type: String, required: true },
     country: { type: String, required: true }
   },
   paymentMethod: {
@@ -47,8 +47,8 @@ const orderSchema = new mongoose.Schema({
 
   orderStatus: {
     type: String,
-    enum: ['pendiente_pago', 'pagado', 'procesando', 'enviado', 'entregado', 'cancelado', 'reembolsado'],
-    default: 'pendiente_pago'
+    enum: ['pending', 'processing', 'shipped', 'delivered', 'cancelled'],
+    default: 'pending'
   },
   isPaid: { type: Boolean, default: false },
   paidAt: Date,

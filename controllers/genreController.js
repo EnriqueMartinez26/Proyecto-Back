@@ -105,17 +105,17 @@ exports.createGenre = async (req, res, next) => {
     }
 };
 
-// Delete genre
+// Delete genre (Soft Delete)
 exports.deleteGenre = async (req, res, next) => {
     try {
         const { id } = req.params;
 
-        // Try deleting by custom ID first
-        let genre = await Genre.findOneAndDelete({ id });
+        // Try soft deleting by custom ID first
+        let genre = await Genre.findOneAndUpdate({ id }, { activo: false }, { new: true });
 
-        // If not found and it looks like a MongoID, try deleting by _id
+        // If not found and it looks like a MongoID, try by _id
         if (!genre && id.match(/^[0-9a-fA-F]{24}$/)) {
-            genre = await Genre.findByIdAndDelete(id);
+            genre = await Genre.findByIdAndUpdate(id, { activo: false }, { new: true });
         }
 
         if (!genre) {
@@ -124,18 +124,15 @@ exports.deleteGenre = async (req, res, next) => {
             throw error;
         }
 
-        res.status(200).json({ success: true, message: 'Género eliminado', id });
+        res.status(200).json({ success: true, message: 'Género eliminado (Soft Delete)', id });
     } catch (error) {
         next(error);
     }
 };
 
-// Delete multiple genres
+// Delete multiple genres (Soft Delete)
 exports.deleteGenres = async (req, res, next) => {
     try {
-        console.log('🔍 DELETE /MULTI GENRES Request Body:', req.body);
-        console.log('🔍 DELETE /MULTI GENRES Query:', req.query);
-
         let ids = [];
 
         // 1. Try body as array
@@ -154,32 +151,27 @@ exports.deleteGenres = async (req, res, next) => {
         }
 
         if (!ids || ids.length === 0) {
-            console.warn('❌ No se encontraron IDs en Body ni Query');
-            if (Object.keys(req.body).length === 0) {
-                const error = new Error('Body vacío. Si usas axios delete, envía: { data: ids } o ?ids=...');
-                error.statusCode = 400;
-                throw error;
-            }
-
-            const error = new Error('Formato de datos inválido. Se esperaba un array de IDs.');
+            const error = new Error('No se proporcionaron IDs para eliminar');
             error.statusCode = 400;
             throw error;
         }
 
-        // Delete using either custom 'id' or Mongo '_id'
         const mongoIds = ids.filter(id => id.match(/^[0-9a-fA-F]{24}$/));
         const customIds = ids;
 
-        const result = await Genre.deleteMany({
-            $or: [
-                { id: { $in: customIds } },
-                { _id: { $in: mongoIds } }
-            ]
-        });
+        const result = await Genre.updateMany(
+            {
+                $or: [
+                    { id: { $in: customIds } },
+                    { _id: { $in: mongoIds } }
+                ]
+            },
+            { activo: false }
+        );
 
         res.status(200).json({
             success: true,
-            message: `${result.deletedCount} géneros eliminados`,
+            message: `${result.modifiedCount} géneros eliminados (Soft Delete)`,
             ids
         });
     } catch (error) {
