@@ -1,7 +1,7 @@
 {
-  "name": "golstore-backend",
+  "name": "4fun-backend",
   "version": "1.0.0",
-  "description": "Backend para e-commerce de videojuegos Golstore",
+  "description": "Backend para la tienda de artículos deportivos y videojuegos 4Fun",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -30,6 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "mercadopago": "^2.11.0",
     "mongoose": "^7.6.3",
+    "nodemailer": "^7.0.12",
     "winston": "^3.18.3"
   },
   "devDependencies": {

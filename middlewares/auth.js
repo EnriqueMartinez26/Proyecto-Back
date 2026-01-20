@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const logger = require('../utils/logger');
 
 exports.protect = async (req, res, next) => {
     try {
@@ -23,7 +24,7 @@ exports.protect = async (req, res, next) => {
 
         // SEGURIDAD CRÍTICA: Fallar si no hay secreto configurado
         if (!process.env.JWT_SECRET) {
-            console.error("FATAL: JWT_SECRET no definido en variables de entorno.");
+            logger.error("FATAL: JWT_SECRET no definido en variables de entorno.");
             return res.status(500).json({ success: false, message: 'Error de configuración del servidor' });
         }
 

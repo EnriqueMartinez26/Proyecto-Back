@@ -82,7 +82,7 @@ class OrderService {
           },
           auto_return: 'approved',
           external_reference: order._id.toString(),
-          statement_descriptor: "GOLSTORE",
+          statement_descriptor: "4FUN",
           notification_url: `${backendUrl}/api/orders/webhook`,
           expires: true,
           expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
