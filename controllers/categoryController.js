@@ -1,4 +1,5 @@
 const Category = require('../models/Category');
+const logger = require('../utils/logger');
 
 // Obtener todas las categorías
 exports.getCategories = async (req, res) => {
@@ -10,7 +11,7 @@ exports.getCategories = async (req, res) => {
       categories
     });
   } catch (error) {
-    console.error('Error al obtener categorías:', error);
+    logger.error('Error al obtener categorías:', error);
     res.status(500).json({ message: 'Error al obtener categorías', error: error.message });
   }
 };

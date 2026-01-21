@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">17.44% </span>
+                <span class="strong">18.98% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>15/86</span>
+                <span class='fraction'>15/79</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">7.14% </span>
+                <span class="strong">7.5% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>3/42</span>
+                <span class='fraction'>3/40</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">17.28% </span>
+                <span class="strong">18.91% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>14/81</span>
+                <span class='fraction'>14/74</span>
             </div>
         
             
@@ -243,15 +243,7 @@
 <a name='L178'></a><a href='#L178'>178</a>
 <a name='L179'></a><a href='#L179'>179</a>
 <a name='L180'></a><a href='#L180'>180</a>
-<a name='L181'></a><a href='#L181'>181</a>
-<a name='L182'></a><a href='#L182'>182</a>
-<a name='L183'></a><a href='#L183'>183</a>
-<a name='L184'></a><a href='#L184'>184</a>
-<a name='L185'></a><a href='#L185'>185</a>
-<a name='L186'></a><a href='#L186'>186</a>
-<a name='L187'></a><a href='#L187'>187</a>
-<a name='L188'></a><a href='#L188'>188</a>
-<a name='L189'></a><a href='#L189'>189</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
+<a name='L181'></a><a href='#L181'>181</a></td><td class="line-coverage quiet"><span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
@@ -387,9 +379,6 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -410,20 +399,15 @@
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -546,17 +530,17 @@ exports.createGenre = <span class="fstat-no" title="function not covered" >as</s
     }
 };
 &nbsp;
-// Delete genre
+// Delete genre (Soft Delete)
 exports.deleteGenre = <span class="fstat-no" title="function not covered" >as</span>ync (req, res, next) =&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
         const { id } = <span class="cstat-no" title="statement not covered" >req.params;</span>
 &nbsp;
-        // Try deleting by custom ID first
-        let genre = <span class="cstat-no" title="statement not covered" >await Genre.findOneAndDelete({ id });</span>
+        // Try soft deleting by custom ID first
+        let genre = <span class="cstat-no" title="statement not covered" >await Genre.findOneAndUpdate({ id }, { activo: false }, { new: true });</span>
 &nbsp;
-        // If not found and it looks like a MongoID, try deleting by _id
+        // If not found and it looks like a MongoID, try by _id
 <span class="cstat-no" title="statement not covered" >        if (!genre &amp;&amp; id.match(/^[0-9a-fA-F]{24}$/)) {</span>
-<span class="cstat-no" title="statement not covered" >            genre = await Genre.findByIdAndDelete(id);</span>
+<span class="cstat-no" title="statement not covered" >            genre = await Genre.findByIdAndUpdate(id, { activo: false }, { new: true });</span>
         }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >        if (!genre) {</span>
@@ -565,18 +549,15 @@ exports.deleteGenre = <span class="fstat-no" title="function not covered" >as</s
 <span class="cstat-no" title="statement not covered" >            throw error;</span>
         }
 &nbsp;
-<span class="cstat-no" title="statement not covered" >        res.status(200).json({ success: true, message: 'Género eliminado', id });</span>
+<span class="cstat-no" title="statement not covered" >        res.status(200).json({ success: true, message: 'Género eliminado (Soft Delete)', id });</span>
     } catch (error) {
 <span class="cstat-no" title="statement not covered" >        next(error);</span>
     }
 };
 &nbsp;
-// Delete multiple genres
+// Delete multiple genres (Soft Delete)
 exports.deleteGenres = <span class="fstat-no" title="function not covered" >as</span>ync (req, res, next) =&gt; {
 <span class="cstat-no" title="statement not covered" >    try {</span>
-<span class="cstat-no" title="statement not covered" >        console.log('🔍 DELETE /MULTI GENRES Request Body:', req.body);</span>
-<span class="cstat-no" title="statement not covered" >        console.log('🔍 DELETE /MULTI GENRES Query:', req.query);</span>
-&nbsp;
         let ids = <span class="cstat-no" title="statement not covered" >[];</span>
 &nbsp;
         // 1. Try body as array
@@ -595,32 +576,27 @@ exports.deleteGenres = <span class="fstat-no" title="function not covered" >as</
         }
 &nbsp;
 <span class="cstat-no" title="statement not covered" >        if (!ids || ids.length === 0) {</span>
-<span class="cstat-no" title="statement not covered" >            console.warn('❌ No se encontraron IDs en Body ni Query');</span>
-<span class="cstat-no" title="statement not covered" >            if (Object.keys(req.body).length === 0) {</span>
-                const error = <span class="cstat-no" title="statement not covered" >new Error('Body vacío. Si usas axios delete, envía: { data: ids } o ?ids=...');</span>
-<span class="cstat-no" title="statement not covered" >                error.statusCode = 400;</span>
-<span class="cstat-no" title="statement not covered" >                throw error;</span>
-            }
-&nbsp;
-            const error = <span class="cstat-no" title="statement not covered" >new Error('Formato de datos inválido. Se esperaba un array de IDs.');</span>
+            const error = <span class="cstat-no" title="statement not covered" >new Error('No se proporcionaron IDs para eliminar');</span>
 <span class="cstat-no" title="statement not covered" >            error.statusCode = 400;</span>
 <span class="cstat-no" title="statement not covered" >            throw error;</span>
         }
 &nbsp;
-        // Delete using either custom 'id' or Mongo '_id'
         const mongoIds = <span class="cstat-no" title="statement not covered" >ids.filter(<span class="fstat-no" title="function not covered" >id</span> =&gt; <span class="cstat-no" title="statement not covered" >id.match(/^[0-9a-fA-F]{24}$/))</span>;</span>
         const customIds = <span class="cstat-no" title="statement not covered" >ids;</span>
 &nbsp;
-        const result = <span class="cstat-no" title="statement not covered" >await Genre.deleteMany({</span>
-            $or: [
-                { id: { $in: customIds } },
-                { _id: { $in: mongoIds } }
-            ]
-        });
+        const result = <span class="cstat-no" title="statement not covered" >await Genre.updateMany(</span>
+            {
+                $or: [
+                    { id: { $in: customIds } },
+                    { _id: { $in: mongoIds } }
+                ]
+            },
+            { activo: false }
+        );
 &nbsp;
 <span class="cstat-no" title="statement not covered" >        res.status(200).json({</span>
             success: true,
-            message: `${result.deletedCount} géneros eliminados`,
+            message: `${result.modifiedCount} géneros eliminados (Soft Delete)`,
             ids
         });
     } catch (error) {
@@ -634,7 +610,7 @@ exports.deleteGenres = <span class="fstat-no" title="function not covered" >as</
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-01-19T09:05:09.861Z
+                at 2026-01-21T06:37:32.826Z
             </div>
         <script src="../prettify.js"></script>
         <script>

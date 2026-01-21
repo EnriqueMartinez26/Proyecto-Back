@@ -1,5 +1,6 @@
 const Cart = require('../models/Cart');
 const ProductService = require('../services/productService');
+const logger = require('../utils/logger');
 
 // Campos necesarios para pasar la validación Zod en el Frontend
 const PRODUCT_FIELDS = 'nombre precio imagenUrl stock plataformaId generoId tipo descripcion desarrollador fechaLanzamiento calificacion';
@@ -69,7 +70,7 @@ exports.getCart = async (req, res) => {
 
     res.json({ success: true, cart: cartResponse });
   } catch (error) {
-    console.error('Error al obtener carrito:', error);
+    logger.error('Error al obtener carrito:', error);
     res.status(500).json({ message: 'Error al obtener carrito', error: error.message });
   }
 };

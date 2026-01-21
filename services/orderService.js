@@ -3,6 +3,7 @@ const Product = require('../models/Product');
 const DigitalKey = require('../models/DigitalKey');
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 let mpClient = null;
 const getMpClient = () => {
@@ -94,8 +95,8 @@ class OrderService {
       order.externalId = mpResponse.id;
       await order.save();
 
-      // --- FIX CRÍTICO: FORZAR SANDBOX EN DESARROLLO ---
-      // Usamos sandbox_init_point para que MP acepte al Usuario de Prueba
+      // --- CONFIGURACIÓN DE ENTORNO ---
+      // En modo desarrollo, utilizamos el sandbox_init_point para permitir pruebas
       const link = process.env.NODE_ENV === 'production'
         ? mpResponse.init_point
         : mpResponse.sandbox_init_point;
@@ -169,7 +170,7 @@ class OrderService {
       const manifest = `id:${dataId};request-id:${headers['x-request-id']};ts:${ts};`;
       const hmac = crypto.createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET);
       const digest = hmac.update(manifest).digest('hex');
-      if (QH !== digest) console.warn('⚠️ Firma de webhook inválida (continuando en dev)');
+      if (QH !== digest) logger.warn('⚠️ Firma de webhook inválida (continuando en dev)');
     }
 
     const client = getMpClient();
@@ -191,7 +192,7 @@ class OrderService {
       order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
 
       // Entrega de Claves
-      console.log(`📦 Procesando entrega digital para orden ${order._id}...`);
+      logger.info(`📦 Procesando entrega digital para orden ${order._id}...`);
       for (const item of order.orderItems) {
         if (item.product && item.product.tipo === 'Digital') {
           for (let i = 0; i < item.quantity; i++) {
@@ -200,8 +201,8 @@ class OrderService {
               { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
               { new: true }
             );
-            if (key) console.log(`🔑 Clave asignada: ${key.clave}`);
-            else console.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
+            if (key) logger.info(`🔑 Clave asignada: ${key.clave}`);
+            else logger.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
           }
         }
       }

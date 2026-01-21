@@ -2,6 +2,7 @@ const OrderService = require('../services/orderService');
 const Order = require('../models/Order');
 const DigitalKey = require('../models/DigitalKey');
 const { DEFAULT_IMAGE } = require('../utils/constants');
+const logger = require('../utils/logger');
 
 // Crear orden
 exports.createOrder = async (req, res, next) => {
@@ -24,7 +25,7 @@ exports.receiveWebhook = async (req, res) => {
     await OrderService.handleWebhook(req.headers, req.body, req.query);
     res.status(200).send('OK');
   } catch (error) {
-    console.error('Webhook Error:', error.message);
+    logger.error('Webhook Error:', error.message);
     // Si es error de validación (ej: falta ID), devolver 400 para que MP no reintente
     if (error.message === 'Missing payment ID' || error.message === 'Pago no encontrado') {
       return res.status(400).json({ error: error.message });
@@ -46,7 +47,7 @@ exports.paymentFeedback = (req, res) => {
   if (payment_id) destination.searchParams.append('payment_id', payment_id);
   if (external_reference) destination.searchParams.append('external_reference', external_reference);
 
-  console.log(`🔀 Redirigiendo usuario (Puente) a: ${destination.toString()}`);
+  logger.info(`🔀 Redirigiendo usuario (Puente) a: ${destination.toString()}`);
   res.redirect(destination.toString());
 };
 

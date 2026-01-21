@@ -1,16 +1,17 @@
 const User = require('../models/User');
+const logger = require('../utils/logger');
 
 // Obtener todos los usuarios (admin)
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select('-password');
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       count: users.length,
-      users 
+      users
     });
   } catch (error) {
-    console.error('Error al obtener usuarios:', error);
+    logger.error('Error al obtener usuarios:', error);
     res.status(500).json({ message: 'Error al obtener usuarios', error: error.message });
   }
 };
@@ -19,22 +20,22 @@ exports.getAllUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('-password');
-    
+
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Usuario no encontrado' 
+        message: 'Usuario no encontrado'
       });
     }
 
-    res.json({ 
-      success: true, 
-      user 
+    res.json({
+      success: true,
+      user
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: error.message 
+      message: error.message
     });
   }
 };
@@ -47,9 +48,9 @@ exports.updateUser = async (req, res) => {
     const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Usuario no encontrado' 
+        message: 'Usuario no encontrado'
       });
     }
 
@@ -60,7 +61,7 @@ exports.updateUser = async (req, res) => {
 
     const updatedUser = await user.save();
 
-    res.json({ 
+    res.json({
       success: true,
       message: 'Usuario actualizado exitosamente',
       user: {
@@ -73,9 +74,9 @@ exports.updateUser = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: error.message 
+      message: error.message
     });
   }
 };
@@ -86,20 +87,20 @@ exports.deleteUser = async (req, res) => {
     const user = await User.findByIdAndDelete(req.params.id);
 
     if (!user) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Usuario no encontrado' 
+        message: 'Usuario no encontrado'
       });
     }
 
-    res.json({ 
-      success: true, 
-      message: 'Usuario eliminado exitosamente' 
+    res.json({
+      success: true,
+      message: 'Usuario eliminado exitosamente'
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: error.message 
+      message: error.message
     });
   }
 };
