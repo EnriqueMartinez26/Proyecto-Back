@@ -25,4 +25,7 @@ const platformSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Índice para búsqueda por nombre
+platformSchema.index({ nombre: 'text' });
+
 module.exports = mongoose.model('Platform', platformSchema);

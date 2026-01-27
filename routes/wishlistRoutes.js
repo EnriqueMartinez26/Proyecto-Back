@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const { protect } = require('../middlewares/auth');
 const { getWishlist, toggleWishlist } = require('../controllers/wishlistController');
-router.get('/:userId', getWishlist);
-router.post('/toggle', toggleWishlist);
+
+// Rutas de wishlist protegidas
+router.get('/:userId', protect, getWishlist);
+router.post('/toggle', protect, toggleWishlist);
+
 module.exports = router;

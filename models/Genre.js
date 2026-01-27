@@ -25,4 +25,7 @@ const genreSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Índice para búsqueda por nombre
+genreSchema.index({ nombre: 'text' });
+
 module.exports = mongoose.model('Genre', genreSchema);

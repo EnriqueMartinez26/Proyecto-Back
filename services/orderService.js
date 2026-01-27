@@ -1,9 +1,11 @@
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const DigitalKey = require('../models/DigitalKey');
+const EmailService = require('./emailService'); // Importar EmailService
 const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const ErrorResponse = require('../utils/errorResponse');
 
 let mpClient = null;
 const getMpClient = () => {
@@ -21,7 +23,7 @@ const getMpClient = () => {
 
 class OrderService {
   async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
-    if (!orderItems?.length) throw new Error('El carrito está vacío.');
+    if (!orderItems?.length) throw new ErrorResponse('El carrito está vacío.', 400);
 
     // 1. Validaciones
     let calculatedTotal = 0;
@@ -29,8 +31,19 @@ class OrderService {
 
     for (const item of orderItems) {
       const product = await Product.findById(item.product);
-      if (!product) throw new Error(`Producto no encontrado: ${item.name}`);
-      if (product.stock < item.quantity) throw new Error(`Stock insuficiente: ${product.nombre}`);
+      if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
+      if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
+
+      // STOCK CHECK CRÍTICO (Fase 1)
+      if (product.tipo === 'Digital') {
+        const realStock = await DigitalKey.countDocuments({ productoId: item.product, estado: 'DISPONIBLE' });
+        if (realStock < item.quantity) {
+          throw new ErrorResponse(`Stock insuficiente de keys para: ${product.nombre} (Disponibles: ${realStock})`, 400);
+        }
+      } else {
+        // Fisico
+        if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente: ${product.nombre}`, 400);
+      }
 
       calculatedTotal += product.precio * item.quantity;
 
@@ -59,7 +72,6 @@ class OrderService {
       shippingAddress,
       paymentMethod,
       itemsPrice: calculatedTotal,
-      totalPrice: calculatedTotal,
       totalPrice: calculatedTotal,
       orderStatus: 'pending',
       isPaid: false
@@ -102,12 +114,10 @@ class OrderService {
         : mpResponse.sandbox_init_point;
 
       return {
-        orderId: order._id, // Requirement: return orderId
+        orderId: order._id,
         paymentLink: link,
-        order // Return full order too just in case
+        order
       };
-
-      return { order, paymentLink: link };
 
     } catch (error) {
       // Rollback
@@ -193,6 +203,7 @@ class OrderService {
 
       // Entrega de Claves
       logger.info(`📦 Procesando entrega digital para orden ${order._id}...`);
+      const deliveredKeys = []; // Acumulador para email
       for (const item of order.orderItems) {
         if (item.product && item.product.tipo === 'Digital') {
           for (let i = 0; i < item.quantity; i++) {
@@ -201,9 +212,26 @@ class OrderService {
               { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
               { new: true }
             );
-            if (key) logger.info(`🔑 Clave asignada: ${key.clave}`);
-            else logger.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
+            if (key) {
+              logger.info(`🔑 Clave asignada: ${key.clave}`);
+              deliveredKeys.push({ productName: item.product.nombre, key: key.clave });
+            } else {
+              logger.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
+            }
           }
+        }
+      }
+
+      // Enviar Email con Keys (Phase 1)
+      if (deliveredKeys.length > 0) {
+        try {
+          const user = await require('../models/User').findById(order.user);
+          if (user) {
+            await EmailService.sendDigitalProductDelivery(user, order, deliveredKeys);
+            logger.info(`📧 Email de claves enviado a ${user.email}`);
+          }
+        } catch (emailError) {
+          logger.error('Error enviando email de claves:', emailError);
         }
       }
 
@@ -211,6 +239,70 @@ class OrderService {
     }
 
     return { status: 'ok', state: paymentInfo.status };
+  }
+
+  // Obtener orden por ID con validación de permisos
+  async getOrderById(orderId, userId, userRole) {
+    const order = await Order.findById(orderId)
+      .populate('user', 'name email')
+      .populate('orderItems.product', 'name price');
+
+    if (!order) {
+      throw new ErrorResponse('Orden no encontrada', 404);
+    }
+
+    // Validar acceso: Solo admin o dueño de la orden
+    if (order.user._id.toString() !== userId && userRole !== 'admin') {
+      throw new ErrorResponse('No autorizado para ver esta orden', 403);
+    }
+
+    return order;
+  }
+
+  // Listar órdenes (Admin) con filtros y paginación
+  async getAllOrders({ page = 1, limit = 10, status, userId }) {
+    const filter = {};
+    if (status) filter.orderStatus = status;
+    if (userId) filter.user = userId;
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+
+    const orders = await Order.find(filter)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
+      .lean();
+
+    const count = await Order.countDocuments(filter);
+
+    return {
+      count: orders.length,
+      total: count,
+      page: pageNum,
+      totalPages: Math.ceil(count / limitNum),
+      orders
+    };
+  }
+
+  async updateOrderStatus(orderId, status) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+
+    order.orderStatus = status;
+    await order.save();
+    return order;
+  }
+
+  async updateOrderToPaid(orderId) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+
+    order.isPaid = true;
+    order.paidAt = Date.now();
+    await order.save();
+    return order;
   }
 }
 

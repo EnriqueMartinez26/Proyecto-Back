@@ -1,9 +1,8 @@
 const ProductService = require('../services/productService');
 
-// Obtener todos los productos (con filtros y paginación)
 exports.getProducts = async (req, res, next) => {
   try {
-    const { search, platform, genre, minPrice, maxPrice, page, limit } = req.query;
+    const { search, platform, genre, minPrice, maxPrice, page, limit, sort } = req.query;
 
     const result = await ProductService.getProducts({
       search,
@@ -12,7 +11,8 @@ exports.getProducts = async (req, res, next) => {
       minPrice,
       maxPrice,
       page,
-      limit
+      limit,
+      sort
     });
 
     res.status(200).json({
@@ -24,7 +24,6 @@ exports.getProducts = async (req, res, next) => {
   }
 };
 
-// Obtener producto por ID
 exports.getProduct = async (req, res, next) => {
   try {
     const product = await ProductService.getProductById(req.params.id);
@@ -34,7 +33,6 @@ exports.getProduct = async (req, res, next) => {
   }
 };
 
-// Crear producto
 exports.createProduct = async (req, res, next) => {
   try {
     const product = await ProductService.createProduct(req.body);
@@ -44,7 +42,6 @@ exports.createProduct = async (req, res, next) => {
   }
 };
 
-// Actualizar producto
 exports.updateProduct = async (req, res, next) => {
   try {
     const product = await ProductService.updateProduct(req.params.id, req.body);
@@ -54,7 +51,6 @@ exports.updateProduct = async (req, res, next) => {
   }
 };
 
-// Eliminar producto
 exports.deleteProduct = async (req, res, next) => {
   try {
     await ProductService.deleteProduct(req.params.id);
@@ -64,21 +60,15 @@ exports.deleteProduct = async (req, res, next) => {
   }
 };
 
-// Eliminar múltiples productos
 exports.deleteProducts = async (req, res, next) => {
   try {
     let ids = [];
 
-    // 1. Array en body directo
     if (Array.isArray(req.body) && req.body.length > 0) {
       ids = req.body;
-    }
-    // 2. Objeto con propiedad ids
-    else if (req.body.ids && Array.isArray(req.body.ids)) {
+    } else if (req.body.ids && Array.isArray(req.body.ids)) {
       ids = req.body.ids;
-    }
-    // 3. Query param
-    else if (req.query.ids) {
+    } else if (req.query.ids) {
       ids = Array.isArray(req.query.ids)
         ? req.query.ids
         : req.query.ids.split(',').filter(Boolean);

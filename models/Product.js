@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { PC_SPECS, TOP_DEVELOPERS } = require('../utils/constants');
 
 const productSchema = new mongoose.Schema({
   nombre: {
@@ -36,6 +37,8 @@ const productSchema = new mongoose.Schema({
     type: String,
     required: [true, 'El desarrollador es requerido'],
     trim: true
+    // Nota: Se removió la validación enum para permitir más flexibilidad
+    // La lista TOP_DEVELOPERS se usa como referencia, no como restricción
   },
   imagenUrl: {
     type: String,
@@ -67,6 +70,31 @@ const productSchema = new mongoose.Schema({
   activo: {
     type: Boolean,
     default: true
+  },
+  // New Fields
+  specPreset: {
+    type: String,
+    enum: ['Low', 'Mid', 'High'],
+    required: false
+  },
+  requisitos: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  // Discount Fields
+  precioOriginal: {
+    type: Number,
+    default: null // If null, no discount active
+  },
+  descuentoPorcentaje: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  descuentoFechaFin: {
+    type: Date,
+    default: null // null = no expiry
   }
 }, {
   timestamps: true,
@@ -98,5 +126,15 @@ productSchema.index({ precio: 1 });
 productSchema.index({ fechaLanzamiento: -1 });
 productSchema.index({ activo: 1 });
 productSchema.index({ calificacion: -1 });
+
+// Pre-save hook: Auto-populate Requirements based on Preset
+productSchema.pre('save', function (next) {
+  if (this.specPreset && PC_SPECS[this.specPreset.toUpperCase()]) {
+    // Only overwrite if requirements are empty to avoid overwriting custom tweaks?
+    // User request implies "choose... and build specs", so we enforce the preset values.
+    this.requisitos = PC_SPECS[this.specPreset.toUpperCase()];
+  }
+  next();
+});
 
 module.exports = mongoose.model('Product', productSchema);

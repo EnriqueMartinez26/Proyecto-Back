@@ -1,18 +1,10 @@
-const Platform = require('../models/Platform');
-
-// Helper to map to DTO
-const toDTO = (p) => ({
-    id: p.id,
-    name: p.nombre,
-    imageId: p.imageId,
-    active: p.activo
-});
+const PlatformService = require('../services/platformService');
 
 // Get all platforms
 exports.getPlatforms = async (req, res, next) => {
     try {
-        const platforms = await Platform.find();
-        res.status(200).json(platforms.map(toDTO));
+        const platforms = await PlatformService.getPlatforms();
+        res.status(200).json(platforms);
     } catch (error) {
         next(error);
     }
@@ -21,54 +13,8 @@ exports.getPlatforms = async (req, res, next) => {
 // Get platform by ID
 exports.getPlatform = async (req, res, next) => {
     try {
-        const { id } = req.params;
-        let platform = await Platform.findOne({ id });
-
-        if (!platform && id.match(/^[0-9a-fA-F]{24}$/)) {
-            platform = await Platform.findById(id);
-        }
-
-        if (!platform) {
-            const error = new Error('Plataforma no encontrada');
-            error.statusCode = 404;
-            throw error;
-        }
-
-        res.status(200).json({ success: true, data: toDTO(platform) });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// Update platform (UPSERT - Update or Insert)
-exports.updatePlatform = async (req, res, next) => {
-    try {
-        const { name, imageId, active } = req.body;
-        const updateData = {};
-
-        if (name) updateData.nombre = name;
-        if (imageId !== undefined) updateData.imageId = imageId;
-        // Map 'active' from body to 'activo' in DB
-        if (active !== undefined) updateData.activo = active;
-
-        const platform = await Platform.findOneAndUpdate(
-            { id: req.params.id },
-            {
-                $set: updateData,
-                $setOnInsert: { id: req.params.id }
-            },
-            {
-                new: true,
-                upsert: true, // Create if not exists
-                runValidators: true,
-                setDefaultsOnInsert: true
-            }
-        );
-
-        res.status(200).json({
-            success: true,
-            data: toDTO(platform)
-        });
+        const platform = await PlatformService.getPlatformById(req.params.id);
+        res.status(200).json({ success: true, data: platform });
     } catch (error) {
         next(error);
     }
@@ -77,30 +23,21 @@ exports.updatePlatform = async (req, res, next) => {
 // Create platform
 exports.createPlatform = async (req, res, next) => {
     try {
-        const { id, name, imageId, active } = req.body;
+        const platform = await PlatformService.createPlatform(req.body);
+        res.status(201).json(platform);
+    } catch (error) {
+        next(error);
+    }
+};
 
-        // Custom ID validation
-        if (!id) {
-            const error = new Error('El ID personalizado es requerido');
-            error.statusCode = 400;
-            throw error;
-        }
-
-        const existing = await Platform.findOne({ id });
-        if (existing) {
-            const error = new Error('Ya existe una plataforma con ese ID');
-            error.statusCode = 400;
-            throw error;
-        }
-
-        const platform = await Platform.create({
-            id,
-            nombre: name,
-            imageId,
-            activo: active !== undefined ? active : true
+// Update platform (UPSERT - Update or Insert)
+exports.updatePlatform = async (req, res, next) => {
+    try {
+        const platform = await PlatformService.updatePlatform(req.params.id, req.body);
+        res.status(200).json({
+            success: true,
+            data: platform
         });
-
-        res.status(201).json(toDTO(platform));
     } catch (error) {
         next(error);
     }
@@ -109,23 +46,8 @@ exports.createPlatform = async (req, res, next) => {
 // Delete platform (Soft Delete)
 exports.deletePlatform = async (req, res, next) => {
     try {
-        const { id } = req.params;
-
-        // Try soft deleting by custom ID first
-        let platform = await Platform.findOneAndUpdate({ id }, { activo: false }, { new: true });
-
-        // If not found and it looks like a MongoID, try by _id
-        if (!platform && id.match(/^[0-9a-fA-F]{24}$/)) {
-            platform = await Platform.findByIdAndUpdate(id, { activo: false }, { new: true });
-        }
-
-        if (!platform) {
-            const error = new Error('Plataforma no encontrada');
-            error.statusCode = 404;
-            throw error;
-        }
-
-        res.status(200).json({ success: true, message: 'Plataforma eliminada (Soft Delete)', id });
+        await PlatformService.deletePlatform(req.params.id);
+        res.status(200).json({ success: true, message: 'Plataforma eliminada (Soft Delete)', id: req.params.id });
     } catch (error) {
         next(error);
     }
@@ -151,24 +73,7 @@ exports.deletePlatforms = async (req, res, next) => {
                 : req.query.ids.split(',').filter(Boolean);
         }
 
-        if (!ids || ids.length === 0) {
-            const error = new Error('No se proporcionaron IDs para eliminar');
-            error.statusCode = 400;
-            throw error;
-        }
-
-        const mongoIds = ids.filter(id => id.match(/^[0-9a-fA-F]{24}$/));
-        const customIds = ids;
-
-        const result = await Platform.updateMany(
-            {
-                $or: [
-                    { id: { $in: customIds } },
-                    { _id: { $in: mongoIds } }
-                ]
-            },
-            { activo: false }
-        );
+        const result = await PlatformService.deletePlatforms(ids);
 
         res.status(200).json({
             success: true,

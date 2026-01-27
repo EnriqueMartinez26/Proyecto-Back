@@ -1,116 +1,72 @@
-const Category = require('../models/Category');
-const logger = require('../utils/logger');
+const CategoryService = require('../services/categoryService');
 
 // Obtener todas las categorías
-exports.getCategories = async (req, res) => {
+exports.getCategories = async (req, res, next) => {
   try {
-    const categories = await Category.find({ active: true });
+    const categories = await CategoryService.getCategories();
     res.json({
       success: true,
       count: categories.length,
       categories
     });
   } catch (error) {
-    logger.error('Error al obtener categorías:', error);
-    res.status(500).json({ message: 'Error al obtener categorías', error: error.message });
+    next(error);
   }
 };
 
 // Obtener categoría por ID
-exports.getCategory = async (req, res) => {
+exports.getCategory = async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id);
-
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Categoría no encontrada'
-      });
-    }
-
-    res.json({
-      success: true,
-      category
-    });
+    const category = await CategoryService.getCategoryById(req.params.id);
+    res.json({ success: true, category });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
 
 // Crear categoría
-exports.createCategory = async (req, res) => {
+exports.createCategory = async (req, res, next) => {
   try {
-    const category = await Category.create(req.body);
+    const category = await CategoryService.createCategory(req.body);
     res.status(201).json({
       success: true,
       message: 'Categoría creada exitosamente',
       category
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
 
 // Actualizar categoría
-exports.updateCategory = async (req, res) => {
+exports.updateCategory = async (req, res, next) => {
   try {
-    const category = await Category.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Categoría no encontrada'
-      });
-    }
-
+    const category = await CategoryService.updateCategory(req.params.id, req.body);
     res.json({
       success: true,
       message: 'Categoría actualizada exitosamente',
       category
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
 
 // Eliminar categoría
-exports.deleteCategory = async (req, res) => {
+exports.deleteCategory = async (req, res, next) => {
   try {
-    const category = await Category.findByIdAndDelete(req.params.id);
-
-    if (!category) {
-      return res.status(404).json({
-        success: false,
-        message: 'Categoría no encontrada'
-      });
-    }
-
+    await CategoryService.deleteCategory(req.params.id);
     res.json({
       success: true,
       message: 'Categoría eliminada exitosamente'
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
+
 // Eliminar múltiples categorías
-exports.deleteCategories = async (req, res) => {
+exports.deleteCategories = async (req, res, next) => {
   try {
     let ids = [];
 
@@ -124,14 +80,7 @@ exports.deleteCategories = async (req, res) => {
         : req.query.ids.split(',').filter(Boolean);
     }
 
-    if (!ids || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No se proporcionaron IDs para eliminar'
-      });
-    }
-
-    const result = await Category.deleteMany({ _id: { $in: ids } });
+    const result = await CategoryService.deleteCategories(ids);
 
     res.json({
       success: true,
@@ -139,9 +88,6 @@ exports.deleteCategories = async (req, res) => {
       ids
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };

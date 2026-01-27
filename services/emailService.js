@@ -241,6 +241,115 @@ class EmailService {
             html
         });
     }
+
+    /**
+     * Envía las claves digitales tras una compra confirmada
+     * @param {Object} user - Datos del usuario
+     * @param {Object} order - Datos de la orden
+     * @param {Array} keys - Array de objetos { productName, key }
+     */
+    async sendDigitalProductDelivery(user, order, keys) {
+        const { name, email } = user;
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        // Generar filas de tabla para las keys
+        const keysHtml = keys.map(k => `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <td style="padding: 15px; color: #ffffff;">${k.productName}</td>
+                <td style="padding: 15px; text-align: right;">
+                    <code style="background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 16px; letter-spacing: 1px; border: 1px solid rgba(102, 126, 234, 0.3);">
+                        ${k.key}
+                    </code>
+                </td>
+            </tr>
+        `).join('');
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f23;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0f0f23; padding: 40px 20px;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+                            
+                            <!-- Header -->
+                            <tr>
+                                <td style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 40px 40px 30px; text-align: center;">
+                                    <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: 1px;">
+                                        🎮 ¡Tu Entrega Digital!
+                                    </h1>
+                                    <p style="margin: 10px 0 0; font-size: 14px; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 2px;">
+                                        Orden #${order._id.toString().slice(-6).toUpperCase()}
+                                    </p>
+                                </td>
+                            </tr>
+                            
+                            <!-- Content -->
+                            <tr>
+                                <td style="padding: 40px;">
+                                    <p style="margin: 0 0 25px; font-size: 16px; color: #a0a0b9;">
+                                        Hola <strong>${name}</strong>, gracias por tu compra. Aquí tienes tus claves de activación. ¡Que empiece el juego!
+                                    </p>
+                                    
+                                    <table width="100%" cellspacing="0" cellpadding="0" style="background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; margin-bottom: 30px;">
+                                        <thead>
+                                            <tr style="background: rgba(255,255,255,0.05); text-align: left;">
+                                                <th style="padding: 15px; color: #a0a0b9; font-size: 12px; text-transform: uppercase;">Producto</th>
+                                                <th style="padding: 15px; color: #a0a0b9; font-size: 12px; text-transform: uppercase; text-align: right;">Clave de Activación</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${keysHtml}
+                                        </tbody>
+                                    </table>
+                                    
+                                    <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 15px; border-radius: 0 8px 8px 0; margin-bottom: 30px;">
+                                        <p style="margin: 0; font-size: 14px; color: #e0e0e0;">
+                                            <strong style="color: #ffc107;">Instrucciones:</strong> Copia la clave y actívala en la plataforma correspondiente (Steam, Epic, etc).
+                                        </p>
+                                    </div>
+    
+                                    <!-- CTA -->
+                                    <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                                        <tr>
+                                            <td style="border-radius: 8px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);">
+                                                <a href="${frontendUrl}/orders/${order._id}" target="_blank" style="display: inline-block; padding: 14px 30px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                                    Ver Detalle de Orden
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+    
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background: rgba(0,0,0,0.2); padding: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
+                                    <p style="margin: 0; font-size: 12px; color: #6b6b80;">
+                                        ¿Dudas? Contactanos respondiendo a este correo.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        `;
+
+        return this.sendEmail({
+            to: email,
+            subject: '🎮 Tus Keys de 4Fun han llegado',
+            html
+        });
+    }
+
 }
 
 module.exports = new EmailService();

@@ -46,6 +46,7 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:9002',
+      'http://localhost:9005',
       process.env.FRONTEND_URL
     ];
     if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://192.168.') || origin.includes('ngrok')) {
@@ -74,6 +75,8 @@ app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/platforms', require('./routes/platformRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/keys', require('./routes/keyRoutes')); // Rutas de Keys
+app.use('/api/coupons', require('./routes/couponRoutes')); // Rutas de Cupones
 app.use('/api/contact', require('./routes/contactRoutes'));
 
 app.get('/health', (req, res) => {

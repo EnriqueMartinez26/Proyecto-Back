@@ -2,6 +2,7 @@ const Product = require('../models/Product');
 const Platform = require('../models/Platform');
 const Genre = require('../models/Genre');
 const { DEFAULT_IMAGE, UNKNOWN_PRODUCT } = require('../utils/constants');
+const logger = require('../utils/logger');
 
 // --- PRIVATE MAPPER (DTO TRANSFORMER) ---
 // Transforma el documento Mongoose (Español) a DTO API (Inglés)
@@ -37,7 +38,14 @@ const toResponseDTO = (productDoc) => {
         trailerUrl: p.trailerUrl || '',
         rating: p.calificacion,
         stock: p.stock,
-        active: p.activo
+        active: p.activo,
+        // UI Enhancements
+        specPreset: p.specPreset,
+        requirements: p.requisitos,
+        // Discount Fields
+        originalPrice: p.precioOriginal,
+        discountPercentage: p.descuentoPorcentaje || 0,
+        discountEndDate: p.descuentoFechaFin
     };
 };
 
@@ -65,6 +73,12 @@ const mapToModel = (data) => {
     if (data.rating !== undefined) modelData.calificacion = data.rating;
     if (data.stock !== undefined) modelData.stock = data.stock;
     if (data.active !== undefined) modelData.activo = data.active;
+    if (data.specPreset !== undefined) modelData.specPreset = data.specPreset;
+    if (data.requirements !== undefined) modelData.requisitos = data.requirements;
+    // Discount Fields Mapping
+    if (data.originalPrice !== undefined) modelData.precioOriginal = data.originalPrice;
+    if (data.discountPercentage !== undefined) modelData.descuentoPorcentaje = data.discountPercentage;
+    if (data.discountEndDate !== undefined) modelData.descuentoFechaFin = data.discountEndDate;
 
     return modelData;
 };
@@ -72,7 +86,7 @@ const mapToModel = (data) => {
 // --- SERVICIO PÚBLICO ---
 
 exports.getProducts = async (query = {}) => {
-    const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10 } = query;
+    const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort } = query;
     const filter = { activo: true }; // Por defecto solo activos
 
     if (search) {
@@ -99,16 +113,43 @@ exports.getProducts = async (query = {}) => {
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
 
+    // Lógica de ordenamiento dinámico
+    let sortOptions = { createdAt: -1 }; // Default: Newest first
+
+    if (sort) {
+        // Soporta formato string "-price" o "price"
+        const sortField = sort.startsWith('-') ? sort.substring(1) : sort;
+        const sortOrder = sort.startsWith('-') ? -1 : 1;
+
+        // Mapeo seguro de campos (Evita inyección de sorts raros)
+        const allowedSorts = {
+            'price': 'precio',
+            'createdAt': 'createdAt',
+            'rating': 'calificacion',
+            'name': 'nombre'
+        };
+
+        if (allowedSorts[sortField]) {
+            sortOptions = { [allowedSorts[sortField]]: sortOrder };
+        }
+    }
+
     // Ejecución con Populate y Lean para performance
     const products = await Product.find(filter)
         .populate('platformObj')
         .populate('genreObj')
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum)
-        .sort({ createdAt: -1 })
+        .sort(sortOptions)
         .lean();
 
     const count = await Product.countDocuments(filter);
+
+    logger.info(`Productos obtenidos: ${products.length} de ${count} totales`, {
+        filter,
+        page: pageNum,
+        limit: limitNum
+    });
 
     return {
         data: products.map(toResponseDTO),
@@ -137,7 +178,29 @@ exports.getProductById = async (id) => {
 
 exports.createProduct = async (data) => {
     const modelData = mapToModel(data);
+
+    // VALIDACIÓN CRÍTICA: Verificar que Platform y Genre existan y estén activos
+    const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
+    if (!platform) {
+        const error = new Error(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
+    if (!genre) {
+        const error = new Error(`Género '${modelData.generoId}' no encontrado o inactivo`);
+        error.statusCode = 400;
+        throw error;
+    }
+
     const product = await Product.create(modelData);
+
+    logger.info(`Producto creado exitosamente: ${product._id}`, {
+        nombre: modelData.nombre,
+        plataformaId: modelData.plataformaId,
+        generoId: modelData.generoId
+    });
 
     // Recargar para poblar y devolver DTO completo
     const populatedProduct = await Product.findById(product._id)
@@ -149,11 +212,35 @@ exports.createProduct = async (data) => {
 
 exports.updateProduct = async (id, data) => {
     const modelData = mapToModel(data);
+
+    // VALIDACIÓN: Si se está actualizando plataforma o género, verificar que existan
+    if (modelData.plataformaId) {
+        const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
+        if (!platform) {
+            const error = new Error(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`);
+            error.statusCode = 400;
+            throw error;
+        }
+    }
+
+    if (modelData.generoId) {
+        const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
+        if (!genre) {
+            const error = new Error(`Género '${modelData.generoId}' no encontrado o inactivo`);
+            error.statusCode = 400;
+            throw error;
+        }
+    }
+
     const product = await Product.findByIdAndUpdate(id, modelData, { new: true, runValidators: true })
         .populate('platformObj')
         .populate('genreObj');
 
-    if (!product) throw new Error('ProductNotFound');
+    if (!product) {
+        const error = new Error('Producto no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
     return toResponseDTO(product);
 };
 

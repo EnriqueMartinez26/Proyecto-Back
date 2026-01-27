@@ -1,39 +1,20 @@
-const Wishlist = require('../models/Wishlist');
-const ProductService = require('../services/productService');
+const WishlistService = require('../services/wishlistService');
 
-exports.getWishlist = async (req, res) => {
+exports.getWishlist = async (req, res, next) => {
   try {
-    let wishlist = await Wishlist.findOne({ usuarioId: req.params.userId })
-      .populate({
-        path: 'productos.productoId',
-        populate: [
-          { path: 'platformObj' },
-          { path: 'genreObj' }
-        ]
-      });
-
-    if (!wishlist) return res.json({ success: true, wishlist: [] });
-
-    const productos = wishlist.productos
-      .filter(item => item.productoId)
-      .map(item => ProductService.transformDTO(item.productoId));
-
-    res.json({ success: true, wishlist: productos });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+    const wishlist = await WishlistService.getWishlistByUser(req.params.userId);
+    res.json({ success: true, wishlist });
+  } catch (error) {
+    next(error); // Usa el middleware de manejo de errores
+  }
 };
 
-exports.toggleWishlist = async (req, res) => {
+exports.toggleWishlist = async (req, res, next) => {
   try {
     const { userId, productId } = req.body;
-    let wishlist = await Wishlist.findOne({ usuarioId: userId });
-    if (!wishlist) {
-      wishlist = await Wishlist.create({ usuarioId: userId, productos: [{ productoId: productId }] });
-    } else {
-      const idx = wishlist.productos.findIndex(p => p.productoId.toString() === productId);
-      if (idx > -1) wishlist.productos.splice(idx, 1);
-      else wishlist.productos.push({ productoId: productId });
-      await wishlist.save();
-    }
+    await WishlistService.toggleWishlist(userId, productId);
     res.json({ success: true });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) {
+    next(error);
+  }
 };

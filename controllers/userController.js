@@ -1,106 +1,48 @@
-const User = require('../models/User');
-const logger = require('../utils/logger');
+const UserService = require('../services/userService');
 
-// Obtener todos los usuarios (admin)
-exports.getAllUsers = async (req, res) => {
+exports.getAllUsers = async (req, res, next) => {
   try {
-    const users = await User.find().select('-password');
+    const users = await UserService.getAllUsers();
     res.json({
       success: true,
       count: users.length,
       users
     });
   } catch (error) {
-    logger.error('Error al obtener usuarios:', error);
-    res.status(500).json({ message: 'Error al obtener usuarios', error: error.message });
+    next(error);
   }
 };
 
-// Obtener usuario por ID
-exports.getUser = async (req, res) => {
+exports.getUser = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id).select('-password');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
-    res.json({
-      success: true,
-      user
-    });
+    const user = await UserService.getUserById(req.params.id);
+    res.json({ success: true, user });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
 
-// Actualizar perfil de usuario
-exports.updateUser = async (req, res) => {
+exports.updateUser = async (req, res, next) => {
   try {
-    const { name, email, phone, address } = req.body;
-
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
-    user.name = name || user.name;
-    user.email = email || user.email;
-    user.phone = phone || user.phone;
-    user.address = address || user.address;
-
-    const updatedUser = await user.save();
-
+    const user = await UserService.updateUser(req.params.id, req.body);
     res.json({
       success: true,
       message: 'Usuario actualizado exitosamente',
-      user: {
-        id: updatedUser._id,
-        name: updatedUser.name,
-        email: updatedUser.email,
-        role: updatedUser.role,
-        phone: updatedUser.phone,
-        address: updatedUser.address
-      }
+      user
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
 
-// Eliminar usuario
-exports.deleteUser = async (req, res) => {
+exports.deleteUser = async (req, res, next) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'Usuario no encontrado'
-      });
-    }
-
+    await UserService.deleteUser(req.params.id);
     res.json({
       success: true,
       message: 'Usuario eliminado exitosamente'
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    next(error);
   }
 };
