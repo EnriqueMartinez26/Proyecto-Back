@@ -3,7 +3,7 @@ const CartService = require('../services/cartService');
 // Obtener carrito del usuario
 exports.getCart = async (req, res, next) => {
   try {
-    const cartResponse = await CartService.getCart(req.params.userId);
+    const cartResponse = await CartService.getCart(req.user.id);
     res.json({ success: true, cart: cartResponse });
   } catch (error) {
     next(error);
@@ -13,7 +13,8 @@ exports.getCart = async (req, res, next) => {
 // Agregar item al carrito
 exports.addToCart = async (req, res, next) => {
   try {
-    const { userId, productId, quantity } = req.body;
+    const { productId, quantity } = req.body;
+    const userId = req.user.id;
     const populatedCart = await CartService.addToCart(userId, productId, quantity);
     res.json({ success: true, message: 'Agregado', cart: populatedCart });
   } catch (error) {
@@ -24,7 +25,8 @@ exports.addToCart = async (req, res, next) => {
 // Actualizar cantidad
 exports.updateCartItem = async (req, res, next) => {
   try {
-    const { userId, itemId, quantity } = req.body;
+    const { itemId, quantity } = req.body;
+    const userId = req.user.id;
     const populatedCart = await CartService.updateCartItem(userId, itemId, quantity);
     res.json({ success: true, message: 'Actualizado', cart: populatedCart });
   } catch (error) {
@@ -35,7 +37,8 @@ exports.updateCartItem = async (req, res, next) => {
 // Eliminar item
 exports.removeFromCart = async (req, res, next) => {
   try {
-    const { userId, itemId } = req.params;
+    const { itemId } = req.params;
+    const userId = req.user.id;
     const populatedCart = await CartService.removeFromCart(userId, itemId);
     res.json({ success: true, message: 'Eliminado', cart: populatedCart });
   } catch (error) {
@@ -46,7 +49,7 @@ exports.removeFromCart = async (req, res, next) => {
 // Limpiar carrito
 exports.clearCart = async (req, res, next) => {
   try {
-    const cart = await CartService.clearCart(req.params.userId);
+    const cart = await CartService.clearCart(req.user.id);
     res.json({ success: true, message: 'Vaciado', cart });
   } catch (error) {
     next(error);

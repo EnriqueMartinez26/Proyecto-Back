@@ -11,10 +11,10 @@ const {
 const router = express.Router();
 
 // Todas las rutas del carrito requieren autenticación
-router.get('/:userId', protect, getCart);
+router.get('/', protect, getCart);
 router.post('/', protect, addToCart);
 router.put('/', protect, updateCartItem);
-router.delete('/:userId/:itemId', protect, removeFromCart);
-router.delete('/:userId', protect, clearCart);
+router.delete('/:itemId', protect, removeFromCart);
+router.delete('/', protect, clearCart);
 
 module.exports = router;

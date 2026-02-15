@@ -16,6 +16,9 @@ connectDB();
 
 const app = express();
 
+// Confiar en el proxy (necesario para cookies seguras en Render/Vercel)
+app.set('trust proxy', 1);
+
 // Seguridad de Headers
 app.use(helmet());
 
