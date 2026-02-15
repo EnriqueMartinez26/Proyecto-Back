@@ -42,14 +42,22 @@ app.use((req, res, next) => {
 // Configuración CORS con Logging
 app.use(cors({
   origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como apps móviles o curl)
     if (!origin) return callback(null, true);
+
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:9002',
       'http://localhost:9005',
       process.env.FRONTEND_URL
     ];
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://192.168.') || origin.includes('ngrok')) {
+
+    // Lógica flexible para Vercel y desarrollo
+    const isAllowedVercel = origin.includes('vercel.app') && origin.includes('4funstore');
+    const isAllowedLocal = origin.startsWith('http://192.168.') || origin.startsWith('http://localhost');
+    const isAllowedNgrok = origin.includes('ngrok');
+
+    if (allowedOrigins.indexOf(origin) !== -1 || isAllowedVercel || isAllowedLocal || isAllowedNgrok) {
       callback(null, true);
     } else {
       logger.warn(`Bloqueo CORS para origen desconocido: ${origin}`);
