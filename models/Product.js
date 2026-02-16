@@ -81,11 +81,6 @@ const productSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
-  // Discount Fields
-  precioOriginal: {
-    type: Number,
-    default: null // If null, no discount active
-  },
   descuentoPorcentaje: {
     type: Number,
     default: 0,
@@ -94,7 +89,7 @@ const productSchema = new mongoose.Schema({
   },
   descuentoFechaFin: {
     type: Date,
-    default: null // null = no expiry
+    default: null
   }
 }, {
   timestamps: true,

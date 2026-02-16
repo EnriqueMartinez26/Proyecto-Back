@@ -11,27 +11,36 @@ const toResponseDTO = (productDoc) => {
 
     const p = productDoc.toObject ? productDoc.toObject() : productDoc;
 
+    // Discount: calcular finalPrice dinámicamente
+    const discountActive = p.descuentoPorcentaje > 0 &&
+        (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
+
+    const discountPercentage = discountActive ? p.descuentoPorcentaje : 0;
+    const finalPrice = discountActive
+        ? Number((p.precio * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
+        : p.precio;
+
     return {
         id: p._id,
         name: p.nombre,
         description: p.descripcion,
         price: p.precio,
-        // Unification: Use populated virtuals (platformObj/genreObj)
+        finalPrice,
+        discountPercentage,
+        discountEndDate: p.descuentoFechaFin,
         platform: p.platformObj ? {
             id: p.platformObj.id,
             name: p.platformObj.nombre,
             imageId: p.platformObj.imageId,
             active: p.platformObj.activo
         } : { id: p.plataformaId, name: 'Unknown' },
-
         genre: p.genreObj ? {
             id: p.genreObj.id,
             name: p.genreObj.nombre,
             imageId: p.genreObj.imageId,
             active: p.genreObj.activo
         } : { id: p.generoId, name: 'Unknown' },
-
-        type: p.tipo === 'Fisico' ? 'Physical' : 'Digital', // Mapeo de Enum
+        type: p.tipo === 'Fisico' ? 'Physical' : 'Digital',
         releaseDate: p.fechaLanzamiento,
         developer: p.desarrollador,
         imageId: p.imagenUrl || DEFAULT_IMAGE,
@@ -39,13 +48,8 @@ const toResponseDTO = (productDoc) => {
         rating: p.calificacion,
         stock: p.stock,
         active: p.activo,
-        // UI Enhancements
         specPreset: p.specPreset,
-        requirements: p.requisitos,
-        // Discount Fields
-        originalPrice: p.precioOriginal,
-        discountPercentage: p.descuentoPorcentaje || 0,
-        discountEndDate: p.descuentoFechaFin
+        requirements: p.requisitos
     };
 };
 
@@ -76,9 +80,8 @@ const mapToModel = (data) => {
     if (data.specPreset !== undefined) modelData.specPreset = data.specPreset;
     if (data.requirements !== undefined) modelData.requisitos = data.requirements;
     // Discount Fields Mapping
-    if (data.originalPrice !== undefined) modelData.precioOriginal = data.originalPrice;
     if (data.discountPercentage !== undefined) modelData.descuentoPorcentaje = data.discountPercentage;
-    if (data.discountEndDate !== undefined) modelData.descuentoFechaFin = data.discountEndDate;
+    if (data.discountEndDate !== undefined) modelData.descuentoFechaFin = data.discountEndDate || null;
 
     return modelData;
 };
