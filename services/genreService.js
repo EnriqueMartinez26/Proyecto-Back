@@ -11,7 +11,7 @@ const toDTO = (g) => ({
 
 // Get all genres
 exports.getGenres = async () => {
-    const genres = await Genre.find();
+    const genres = await Genre.find({ activo: true });
     logger.info(`Géneros obtenidos: ${genres.length}`);
     return genres.map(toDTO);
 };

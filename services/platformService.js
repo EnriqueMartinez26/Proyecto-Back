@@ -11,7 +11,7 @@ const toDTO = (p) => ({
 
 // Get all platforms
 exports.getPlatforms = async () => {
-    const platforms = await Platform.find();
+    const platforms = await Platform.find({ activo: true });
     logger.info(`Plataformas obtenidas: ${platforms.length}`);
     return platforms.map(toDTO);
 };
