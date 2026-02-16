@@ -282,45 +282,48 @@ exports.deleteProducts = async (ids) => {
     return result;
 };
 
-exports.reorderProduct = async (id, direction) => {
+exports.reorderProduct = async (id, newPosition) => {
+    // newPosition es el índice visual (1-based) al que quiere ir el usuario
+    if (newPosition < 1) {
+        const error = new Error("Posición inválida");
+        error.statusCode = 400;
+        throw error;
+    }
+
     const product = await Product.findById(id);
     if (!product) {
-        const error = new Error('Producto no encontrado');
+        const error = new Error("Producto no encontrado");
         error.statusCode = 404;
         throw error;
     }
 
-    const currentOrder = product.orden;
-    let adjacentProduct;
+    // Obtener todos los productos ordenados por orden actual
+    // Incluir inactivos para mantener consistencia de índices
+    const allProducts = await Product.find({}).sort({ orden: 1 });
 
-    // Direction UP = Lower Index (move towards 0 or negative)
-    // Direction DOWN = Higher Index (move towards infinity)
-    if (direction === 'up') {
-        // Find closest product with order LESS than current
-        adjacentProduct = await Product.findOne({
-            orden: { $lt: currentOrder },
-            ...(product.activo ? { activo: true } : {}) // Contextual swap? No, keep generic structure even if inactive exist
-        })
-            .sort({ orden: -1 }); // Enable standard sort for finding neighbor
-    } else {
-        // Find closest product with order GREATER than current
-        adjacentProduct = await Product.findOne({
-            orden: { $gt: currentOrder }
-        })
-            .sort({ orden: 1 });
+    const currentIndex = allProducts.findIndex(p => p._id.toString() === id);
+    if (currentIndex === -1) return false;
+
+    // Quitar de la posición actual
+    const [moved] = allProducts.splice(currentIndex, 1);
+
+    // Insertar en la nueva posición target (ajustada a 0-based)
+    // Math.min asegura que si pone 9999 vaya al final
+    const targetIndex = Math.min(newPosition - 1, allProducts.length);
+    allProducts.splice(targetIndex, 0, moved);
+
+    // Preparar Bulk Write para actualizar todos los órdenes
+    // Usamos gaps de 1000 para futuras inserciones intermedias
+    const bulkOps = allProducts.map((p, index) => ({
+        updateOne: {
+            filter: { _id: p._id },
+            update: { $set: { orden: index * 1000 } }
+        }
+    }));
+
+    if (bulkOps.length > 0) {
+        await Product.bulkWrite(bulkOps);
     }
 
-    if (adjacentProduct) {
-        // Perform Swap
-        const adjacentOrder = adjacentProduct.orden;
-
-        // Use exact values swap
-        // To avoid unique index issues if we had them (we don't), we could use temp placeholder, but simple swap is fine here.
-        await Product.updateOne({ _id: product._id }, { orden: adjacentOrder });
-        await Product.updateOne({ _id: adjacentProduct._id }, { orden: currentOrder });
-
-        return true;
-    }
-
-    return false; // Already at boundary
+    return true;
 };

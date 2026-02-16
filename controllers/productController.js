@@ -54,18 +54,18 @@ exports.updateProduct = async (req, res, next) => {
 exports.reorderProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { direction } = req.body; // 'up' or 'down'
+    const { newPosition } = req.body;
 
-    if (!['up', 'down'].includes(direction)) {
-      const error = new Error('Dirección inválida');
+    if (newPosition === undefined || typeof newPosition !== 'number') {
+      const error = new Error('Posición inválida, se requiere un número');
       error.statusCode = 400;
       throw error;
     }
 
-    const success = await ProductService.reorderProduct(id, direction);
+    const success = await ProductService.reorderProduct(id, newPosition);
 
     if (!success) {
-      return res.status(400).json({ success: false, message: 'No se pudo mover el producto (límite alcanzado)' });
+      return res.status(400).json({ success: false, message: 'No se pudo mover el producto' });
     }
 
     res.status(200).json({ success: true, message: 'Producto reordenado' });
