@@ -283,7 +283,7 @@ exports.deleteProducts = async (ids) => {
 };
 
 exports.reorderProduct = async (id, newPosition) => {
-    // newPosition es el índice visual (1-based) al que quiere ir el usuario
+    // newPosition es el índice visual (1-based)
     if (newPosition < 1) {
         const error = new Error("Posición inválida");
         error.statusCode = 400;
@@ -297,33 +297,55 @@ exports.reorderProduct = async (id, newPosition) => {
         throw error;
     }
 
-    // Obtener todos los productos ordenados por orden actual
-    // Incluir inactivos para mantener consistencia de índices
-    const allProducts = await Product.find({}).sort({ orden: 1 });
+    // Obtenemos todos los productos (excluyendo el que movemos para simplificar cálculo de huecos)
+    const otherProducts = await Product.find({ _id: { $ne: id } }).sort({ orden: 1 });
 
-    const currentIndex = allProducts.findIndex(p => p._id.toString() === id);
-    if (currentIndex === -1) return false;
+    // Ajustar newPosition a índice de array (0-based) dentro de la lista de "otros"
+    // Si quiere ir a la pos 1 (index 0), se inserta antes del elemento 0 de otherProducts.
+    // Si quiere ir a pos 2 (index 1), se inserta entre elem 0 y 1.
+    // Math.min para no salirnos del rango
+    let targetIndex = Math.min(newPosition - 1, otherProducts.length);
+    targetIndex = Math.max(0, targetIndex); // Seguridad extra
 
-    // Quitar de la posición actual
-    const [moved] = allProducts.splice(currentIndex, 1);
+    // Identificar vecinos
+    const prevProduct = targetIndex > 0 ? otherProducts[targetIndex - 1] : null;
+    const nextProduct = targetIndex < otherProducts.length ? otherProducts[targetIndex] : null;
 
-    // Insertar en la nueva posición target (ajustada a 0-based)
-    // Math.min asegura que si pone 9999 vaya al final
-    const targetIndex = Math.min(newPosition - 1, allProducts.length);
-    allProducts.splice(targetIndex, 0, moved);
+    // Calcular valores de orden de los vecinos
+    // Si no hay previo, asumimos un valor bajo relativo al siguiente o 0
+    // Si no hay siguiente, asumimos un valor alto relativo al previo
+    let prevOrder = prevProduct ? prevProduct.orden : (nextProduct ? nextProduct.orden - 2000 : 0);
+    let nextOrder = nextProduct ? nextProduct.orden : (prevProduct ? prevProduct.orden + 2000 : 2000);
 
-    // Preparar Bulk Write para actualizar todos los órdenes
-    // Usamos gaps de 1000 para futuras inserciones intermedias
-    const bulkOps = allProducts.map((p, index) => ({
-        updateOne: {
-            filter: { _id: p._id },
-            update: { $set: { orden: index * 1000 } }
-        }
-    }));
-
-    if (bulkOps.length > 0) {
-        await Product.bulkWrite(bulkOps);
+    // Caso Borde: Inicio de lista vacía o lógica inicial
+    if (!prevProduct && !nextProduct) {
+        // Solo había 1 producto (el que movemos). Su orden da igual, lo dejamos en 0 o 1000.
+        await Product.updateOne({ _id: id }, { orden: 1000 });
+        return true;
     }
 
+    // CALCULO SENIOR: Promedio
+    let newOrder = (prevOrder + nextOrder) / 2;
+
+    // Verificar colisión o precisión agotada (Gaps muy chicos)
+    // Usamos un umbral (epsilon) de 0.005 o simplemente si son iguales
+    if (Math.abs(newOrder - prevOrder) < 0.005 || Math.abs(newOrder - nextOrder) < 0.005) {
+        // REBALANCEO NECESARIO
+        // Insertamos visualmente en el array y reescribimos todo con gaps limpios de 1000
+        otherProducts.splice(targetIndex, 0, product);
+
+        const bulkOps = otherProducts.map((p, index) => ({
+            updateOne: {
+                filter: { _id: p._id },
+                update: { $set: { orden: (index + 1) * 1000 } }
+            }
+        }));
+
+        await Product.bulkWrite(bulkOps);
+        return true;
+    }
+
+    // UPDATE OPTIMIZADO: Solo tocamos 1 documento
+    await Product.updateOne({ _id: id }, { orden: newOrder });
     return true;
 };
