@@ -224,7 +224,6 @@ exports.createProduct = async (data) => {
 exports.updateProduct = async (id, data) => {
     const modelData = mapToModel(data);
 
-    // VALIDACIÓN: Si se está actualizando plataforma o género, verificar que existan
     if (modelData.plataformaId) {
         const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
         if (!platform) {
@@ -243,15 +242,21 @@ exports.updateProduct = async (id, data) => {
         }
     }
 
-    const product = await Product.findByIdAndUpdate(id, modelData, { new: true, runValidators: true })
-        .populate('platformObj')
-        .populate('genreObj');
-
+    // Usamos findById + save() en vez de findByIdAndUpdate
+    // para que el pre-save hook genere los requisitos a partir del specPreset
+    const product = await Product.findById(id);
     if (!product) {
         const error = new Error('Producto no encontrado');
         error.statusCode = 404;
         throw error;
     }
+
+    Object.assign(product, modelData);
+    await product.save();
+
+    await product.populate('platformObj');
+    await product.populate('genreObj');
+
     return toResponseDTO(product);
 };
 
