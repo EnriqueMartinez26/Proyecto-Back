@@ -2,7 +2,7 @@ const WishlistService = require('../services/wishlistService');
 
 exports.getWishlist = async (req, res, next) => {
   try {
-    const wishlist = await WishlistService.getWishlistByUser(req.params.userId);
+    const wishlist = await WishlistService.getWishlistByUser(req.user.id);
     res.json({ success: true, wishlist });
   } catch (error) {
     next(error); // Usa el middleware de manejo de errores
@@ -11,7 +11,8 @@ exports.getWishlist = async (req, res, next) => {
 
 exports.toggleWishlist = async (req, res, next) => {
   try {
-    const { userId, productId } = req.body;
+    const { productId } = req.body;
+    const userId = req.user.id;
     await WishlistService.toggleWishlist(userId, productId);
     res.json({ success: true });
   } catch (error) {

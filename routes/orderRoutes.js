@@ -19,7 +19,7 @@ router.get('/feedback', paymentFeedback); // <--- Nueva ruta pública
 // Rutas Protegidas
 router.post('/', protect, createOrder);
 router.get('/', protect, authorize('admin'), getAllOrders);
-router.get('/user/:userId', protect, getUserOrders);
+router.get('/user', protect, getUserOrders);
 router.get('/:id', protect, getOrder);
 router.put('/:id/pay', protect, updateOrderToPaid);
 router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus); // New Requirement (PATCH)

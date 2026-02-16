@@ -48,17 +48,11 @@ exports.paymentFeedback = (req, res) => {
   res.redirect(destination.toString());
 };
 
-// Obtener órdenes del usuario
+// Obtener órdenes del usuario logueado
 exports.getUserOrders = async (req, res, next) => {
   try {
-    const targetUserId = req.params.userId || req.user._id;
-
-    // Solo admin o el mismo usuario pueden ver sus órdenes
-    if (req.user.role !== 'admin' && targetUserId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: 'No autorizado' });
-    }
-
-    const enrichedOrders = await OrderService.getUserOrders(targetUserId);
+    const userId = req.user._id;
+    const enrichedOrders = await OrderService.getUserOrders(userId);
     res.json({ success: true, count: enrichedOrders.length, orders: enrichedOrders });
   } catch (error) { next(error); }
 };
