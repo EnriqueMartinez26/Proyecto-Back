@@ -89,8 +89,8 @@ const mapToModel = (data) => {
 // --- SERVICIO PÚBLICO ---
 
 exports.getProducts = async (query = {}) => {
-    const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort } = query;
-    const filter = { activo: true }; // Por defecto solo activos
+    const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
+    const filter = { activo: true };
 
     if (search) {
         filter.$text = { $search: search };
@@ -110,6 +110,14 @@ exports.getProducts = async (query = {}) => {
         filter.precio = {};
         if (minPrice) filter.precio.$gte = Number(minPrice);
         if (maxPrice) filter.precio.$lte = Number(maxPrice);
+    }
+
+    if (discounted === 'true') {
+        filter.descuentoPorcentaje = { $gt: 0 };
+        filter.$or = [
+            { descuentoFechaFin: null },
+            { descuentoFechaFin: { $gt: new Date() } }
+        ];
     }
 
     // Validación de paginación
