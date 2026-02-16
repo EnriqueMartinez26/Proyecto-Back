@@ -297,8 +297,14 @@ exports.reorderProduct = async (id, newPosition) => {
         throw error;
     }
 
-    // Obtenemos todos los productos (excluyendo el que movemos para simplificar cálculo de huecos)
-    const otherProducts = await Product.find({ _id: { $ne: id } }).sort({ orden: 1 });
+    if (!product.activo) {
+        const error = new Error("No se puede reordenar un producto inactivo");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    // Obtenemos SOLO productos ACTIVOS (excluyendo el que movemos para simplificar cálculo de huecos)
+    const otherProducts = await Product.find({ _id: { $ne: id }, activo: true }).sort({ orden: 1 });
 
     // Ajustar newPosition a índice de array (0-based) dentro de la lista de "otros"
     // Si quiere ir a la pos 1 (index 0), se inserta antes del elemento 0 de otherProducts.
