@@ -51,6 +51,29 @@ exports.updateProduct = async (req, res, next) => {
   }
 };
 
+exports.reorderProduct = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { direction } = req.body; // 'up' or 'down'
+
+    if (!['up', 'down'].includes(direction)) {
+      const error = new Error('Dirección inválida');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const success = await ProductService.reorderProduct(id, direction);
+
+    if (!success) {
+      return res.status(400).json({ success: false, message: 'No se pudo mover el producto (límite alcanzado)' });
+    }
+
+    res.status(200).json({ success: true, message: 'Producto reordenado' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.deleteProduct = async (req, res, next) => {
   try {
     await ProductService.deleteProduct(req.params.id);

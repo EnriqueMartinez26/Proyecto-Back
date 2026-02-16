@@ -90,6 +90,10 @@ const productSchema = new mongoose.Schema({
   descuentoFechaFin: {
     type: Date,
     default: null
+  },
+  orden: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true,
@@ -120,6 +124,7 @@ productSchema.index({ tipo: 1 });
 productSchema.index({ precio: 1 });
 productSchema.index({ fechaLanzamiento: -1 });
 productSchema.index({ activo: 1 });
+productSchema.index({ orden: 1 });
 productSchema.index({ calificacion: -1 });
 
 // Pre-save hook: Auto-populate Requirements based on Preset

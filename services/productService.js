@@ -47,9 +47,11 @@ const toResponseDTO = (productDoc) => {
         trailerUrl: p.trailerUrl || '',
         rating: p.calificacion,
         stock: p.stock,
+        stock: p.stock,
         active: p.activo,
         specPreset: p.specPreset,
-        requirements: p.requisitos
+        requirements: p.requisitos,
+        order: p.orden // Expose order index
     };
 };
 
@@ -125,7 +127,7 @@ exports.getProducts = async (query = {}) => {
     const limitNum = Math.max(1, Number(limit));
 
     // Lógica de ordenamiento dinámico
-    let sortOptions = { createdAt: -1 }; // Default: Newest first
+    let sortOptions = { orden: 1 }; // Default: Manual Order (Ascending)
 
     if (sort) {
         // Soporta formato string "-price" o "price"
@@ -137,7 +139,8 @@ exports.getProducts = async (query = {}) => {
             'price': 'precio',
             'createdAt': 'createdAt',
             'rating': 'calificacion',
-            'name': 'nombre'
+            'name': 'nombre',
+            'order': 'orden'
         };
 
         if (allowedSorts[sortField]) {
@@ -204,6 +207,11 @@ exports.createProduct = async (data) => {
         error.statusCode = 400;
         throw error;
     }
+
+    // Auto-rank: Insert at top (smallest order - 1000)
+    const firstProduct = await Product.findOne().sort({ orden: 1 });
+    const newOrder = firstProduct ? firstProduct.orden - 1000 : 0;
+    modelData.orden = newOrder;
 
     const product = await Product.create(modelData);
 
@@ -272,4 +280,47 @@ exports.deleteProducts = async (ids) => {
         { activo: false }
     );
     return result;
+};
+
+exports.reorderProduct = async (id, direction) => {
+    const product = await Product.findById(id);
+    if (!product) {
+        const error = new Error('Producto no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const currentOrder = product.orden;
+    let adjacentProduct;
+
+    // Direction UP = Lower Index (move towards 0 or negative)
+    // Direction DOWN = Higher Index (move towards infinity)
+    if (direction === 'up') {
+        // Find closest product with order LESS than current
+        adjacentProduct = await Product.findOne({
+            orden: { $lt: currentOrder },
+            ...(product.activo ? { activo: true } : {}) // Contextual swap? No, keep generic structure even if inactive exist
+        })
+            .sort({ orden: -1 }); // Enable standard sort for finding neighbor
+    } else {
+        // Find closest product with order GREATER than current
+        adjacentProduct = await Product.findOne({
+            orden: { $gt: currentOrder }
+        })
+            .sort({ orden: 1 });
+    }
+
+    if (adjacentProduct) {
+        // Perform Swap
+        const adjacentOrder = adjacentProduct.orden;
+
+        // Use exact values swap
+        // To avoid unique index issues if we had them (we don't), we could use temp placeholder, but simple swap is fine here.
+        await Product.updateOne({ _id: product._id }, { orden: adjacentOrder });
+        await Product.updateOne({ _id: adjacentProduct._id }, { orden: currentOrder });
+
+        return true;
+    }
+
+    return false; // Already at boundary
 };
