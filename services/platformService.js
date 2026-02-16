@@ -1,4 +1,5 @@
 const Platform = require('../models/Platform');
+const Product = require('../models/Product');
 const logger = require('../utils/logger');
 
 // Helper to map to DTO
@@ -61,30 +62,48 @@ exports.createPlatform = async (data) => {
     return toDTO(platform);
 };
 
-// Update platform (UPSERT)
+// Update platform (UPSERT with ID modification support)
 exports.updatePlatform = async (id, data) => {
-    const { name, imageId, active } = data;
+    const { name, imageId, active, newId } = data;
     const updateData = {};
 
     if (name) updateData.nombre = name;
     if (imageId !== undefined) updateData.imageId = imageId;
     if (active !== undefined) updateData.activo = active;
 
+    // Si se quiere cambiar el ID (slug)
+    if (newId && newId !== id) {
+        // Verificar conflicto
+        const existing = await Platform.findOne({ id: newId });
+        if (existing) {
+            const error = new Error(`El ID '${newId}' ya está en uso por otra plataforma`);
+            error.statusCode = 400;
+            throw error;
+        }
+        updateData.id = newId;
+    }
+
     const platform = await Platform.findOneAndUpdate(
         { id },
         {
             $set: updateData,
-            $setOnInsert: { id }
+            $setOnInsert: { id: newId || id }
         },
         {
-            new: true,
+            new: true, // Devuelve el doc actualizado
             upsert: true,
             runValidators: true,
             setDefaultsOnInsert: true
         }
     );
 
-    logger.info(`Plataforma actualizada: ${platform.id}`);
+    // Si hubo cambio de ID efectivo, migrar productos
+    if (newId && newId !== id && platform) {
+        // Nota: platform ya tiene el nuevo id
+        const result = await Product.updateMany({ plataformaId: id }, { plataformaId: newId });
+        logger.info(`Migrados ${result.modifiedCount} productos de plataforma '${id}' a '${newId}'`);
+    }
+
     return toDTO(platform);
 };
 

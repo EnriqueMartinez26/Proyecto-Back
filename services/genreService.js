@@ -1,4 +1,5 @@
 const Genre = require('../models/Genre');
+const Product = require('../models/Product');
 const logger = require('../utils/logger');
 
 // Helper to map to DTO
@@ -61,20 +62,32 @@ exports.createGenre = async (data) => {
     return toDTO(genre);
 };
 
-// Update genre (UPSERT)
+// Update genre (UPSERT with ID modification support)
 exports.updateGenre = async (id, data) => {
-    const { name, imageId, active } = data;
+    const { name, imageId, active, newId } = data;
     const updateData = {};
 
     if (name) updateData.nombre = name;
     if (imageId !== undefined) updateData.imageId = imageId;
     if (active !== undefined) updateData.activo = active;
 
+    // Si se quiere cambiar el ID (slug)
+    if (newId && newId !== id) {
+        // Verificar conflicto
+        const existing = await Genre.findOne({ id: newId });
+        if (existing) {
+            const error = new Error(`El ID '${newId}' ya está en uso por otro género`);
+            error.statusCode = 400;
+            throw error;
+        }
+        updateData.id = newId;
+    }
+
     const genre = await Genre.findOneAndUpdate(
         { id },
         {
             $set: updateData,
-            $setOnInsert: { id }
+            $setOnInsert: { id: newId || id }
         },
         {
             new: true,
@@ -84,7 +97,12 @@ exports.updateGenre = async (id, data) => {
         }
     );
 
-    logger.info(`Género actualizado: ${genre.id}`);
+    // Si hubo cambio de ID efectivo, migrar productos
+    if (newId && newId !== id && genre) {
+        const result = await Product.updateMany({ generoId: id }, { generoId: newId });
+        logger.info(`Migrados ${result.modifiedCount} productos de género '${id}' a '${newId}'`);
+    }
+
     return toDTO(genre);
 };
 
