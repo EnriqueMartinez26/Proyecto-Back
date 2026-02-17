@@ -18,42 +18,43 @@ class EmailService {
     initialize() {
         if (this.initialized) return;
 
-        const { EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD, EMAIL_FROM } = process.env;
+        // Leemos las nuevas variables del .env
+        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_EMAIL, SMTP_FROM_NAME } = process.env;
 
         // Verificar que las variables de entorno están configuradas
-        if (!EMAIL_HOST || !EMAIL_USER || !EMAIL_PASSWORD) {
-            logger.warn('Configuración de email incompleta. El servicio de correo está deshabilitado.', {
-                hasHost: !!EMAIL_HOST,
-                hasUser: !!EMAIL_USER,
-                hasPassword: !!EMAIL_PASSWORD
+        if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+            logger.warn('Configuración de email incompleta (Faltan variables SMTP).', {
+                host: SMTP_HOST,
+                user: SMTP_USER ? 'Set' : 'Missing',
+                pass: SMTP_PASS ? 'Set' : 'Missing'
             });
             return;
         }
 
-        // Configuración del transportador
+        // Configuración del transportador para Gmail (Puerto 587 TLS)
         this.transporter = nodemailer.createTransport({
-            host: EMAIL_HOST,
-            port: parseInt(EMAIL_PORT) || 587,
-            secure: parseInt(EMAIL_PORT) === 465, // true para 465, false para otros puertos
+            host: SMTP_HOST,
+            port: parseInt(SMTP_PORT) || 587,
+            secure: parseInt(SMTP_PORT) === 465, // true solo para 465
             auth: {
-                user: EMAIL_USER,
-                pass: EMAIL_PASSWORD
+                user: SMTP_USER,
+                pass: SMTP_PASS
             },
-            // Configuración de TLS
             tls: {
-                // En desarrollo o con servidores auto-firmados, puede ser necesario false
-                // En producción debería ser true, pero muchos hosting gratuitos dan problemas con certificados
-                rejectUnauthorized: false
+                rejectUnauthorized: false // Permite certificados auto-firmados en desarrollo
             }
         });
 
-        this.fromAddress = EMAIL_FROM || EMAIL_USER;
+        // Construimos el remitente: "Nombre <email>" o solo email
+        const senderName = SMTP_FROM_NAME || '4Fun Store';
+        const senderEmail = SMTP_FROM_EMAIL || SMTP_USER;
+        this.fromAddress = `"${senderName}" <${senderEmail}>`;
+
         this.initialized = true;
 
-        logger.info('Servicio de email inicializado correctamente', {
-            host: EMAIL_HOST,
-            port: EMAIL_PORT,
-            user: EMAIL_USER.substring(0, 3) + '***' // Log parcial por seguridad
+        logger.info('Servicio de email SMTP inicializado', {
+            host: SMTP_HOST,
+            user: SMTP_USER.substring(0, 3) + '***@' + (SMTP_USER.split('@')[1] || 'gmail.com')
         });
     }
 

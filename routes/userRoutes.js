@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
+const { getUsers, getUserById, updateUser, deleteUser } = require('../controllers/userController');
 const { protect, authorize } = require('../middlewares/auth');
-const {
-  getAllUsers,
-  getUser,
-  updateUser,
-  deleteUser
-} = require('../controllers/userController');
 
-// Todas las rutas protegidas - Solo admin puede ver/modificar usuarios
-router.get('/', protect, authorize('admin'), getAllUsers);
-router.get('/:id', protect, authorize('admin'), getUser);
-router.put('/:id', protect, updateUser); // Usuario puede modificar su propio perfil
-router.delete('/:id', protect, authorize('admin'), deleteUser);
+// Todas las rutas de usuarios son para Admins
+router.use(protect);
+router.use(authorize('admin'));
+
+router.route('/')
+  .get(getUsers);
+
+router.route('/:id')
+  .get(getUserById)
+  .put(updateUser)
+  .delete(deleteUser);
 
 module.exports = router;
