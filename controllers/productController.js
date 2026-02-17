@@ -2,7 +2,7 @@ const ProductService = require('../services/productService');
 
 exports.getProducts = async (req, res, next) => {
   try {
-    const { search, platform, genre, minPrice, maxPrice, page, limit, sort } = req.query;
+    const { search, platform, genre, minPrice, maxPrice, page, limit, sort, discounted } = req.query;
 
     const result = await ProductService.getProducts({
       search,
@@ -12,7 +12,8 @@ exports.getProducts = async (req, res, next) => {
       maxPrice,
       page,
       limit,
-      sort
+      sort,
+      discounted,
     });
 
     res.status(200).json({

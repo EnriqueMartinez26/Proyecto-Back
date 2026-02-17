@@ -39,9 +39,11 @@ class EmailService {
                 user: EMAIL_USER,
                 pass: EMAIL_PASSWORD
             },
-            // Configuración adicional para evitar problemas con certificados en desarrollo
+            // Configuración de TLS
             tls: {
-                rejectUnauthorized: process.env.NODE_ENV === 'production'
+                // En desarrollo o con servidores auto-firmados, puede ser necesario false
+                // En producción debería ser true, pero muchos hosting gratuitos dan problemas con certificados
+                rejectUnauthorized: false
             }
         });
 

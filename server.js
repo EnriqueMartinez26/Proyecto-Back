@@ -86,6 +86,8 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/platforms', require('./routes/platformRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes')); // Nuevo Dashboard
+
 app.use('/api/keys', require('./routes/keyRoutes')); // Rutas de Keys
 app.use('/api/coupons', require('./routes/couponRoutes')); // Rutas de Cupones
 app.use('/api/contact', require('./routes/contactRoutes'));
