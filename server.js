@@ -82,7 +82,7 @@ app.use('/api/products', require('./routes/productRoutes'));
 app.use('/api/wishlist', require('./routes/wishlistRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/categories', require('./routes/categoryRoutes'));
+
 app.use('/api/platforms', require('./routes/platformRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));

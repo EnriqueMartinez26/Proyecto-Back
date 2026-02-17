@@ -8,7 +8,7 @@ require('../models/Platform');
 require('../models/Genre');
 require('../models/Product');
 
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://emartinez03:kukimZ10@cluster0.5ohgu.mongodb.net/?appName=Cluster0';
+const MONGO_URI = process.env.MONGODB_URI;
 
 const GENRES = [
     { id: 'action', nombre: 'Action' },
