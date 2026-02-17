@@ -19,27 +19,21 @@ class AuthService {
             password
         });
 
-        // Envío de email con await para asegurar que el proceso se ejecute
-        // Si falla, no revertimos el registro pero logueamos el error
-        let emailSent = false;
-        try {
-            const result = await emailService.sendWelcomeEmail({ name, email });
-            if (result.success) {
-                logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
-                emailSent = true;
-            } else {
-                logger.warn('Email de bienvenida no enviado (servicio reportó fallo)', { email, reason: result.message });
-            }
-        } catch (error) {
-            logger.error('Excepción al enviar email de bienvenida', { email, error: error.message });
-        }
+        // Envío de email ASÍNCRONO (Fire & Forget)
+        // Evitamos bloquear la respuesta por timeouts en SMTP
+        emailService.sendWelcomeEmail({ name, email })
+            .then(result => {
+                if (result.success) {
+                    logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
+                } else {
+                    logger.warn('Email de bienvenida no enviado', { email, reason: result.message });
+                }
+            })
+            .catch(error => {
+                logger.error('Error al enviar email de bienvenida', { email, error: error.message });
+            });
 
-        // Retornamos el usuario y el estado del email
-        // Mongoose document to object para poder agregar propiedades
-        const userObj = user.toObject();
-        userObj.emailSent = emailSent;
-
-        return userObj;
+        return user;
     }
 
     // Iniciar sesión
