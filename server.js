@@ -52,6 +52,7 @@ app.use(cors({
       'http://localhost:3000',
       'http://localhost:9002',
       'http://localhost:9005',
+      'https://unsubducted-subuncinate-brittni.ngrok-free.dev',
       process.env.FRONTEND_URL
     ];
 
