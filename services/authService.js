@@ -21,16 +21,18 @@ class AuthService {
 
         // Envío de email ASÍNCRONO (Fire & Forget)
         // Evitamos bloquear la respuesta por timeouts en SMTP
+        logger.info(`[AuthService] Iniciando proceso de envío de email de bienvenida a: ${email}`);
+
         emailService.sendWelcomeEmail({ name, email })
             .then(result => {
                 if (result.success) {
-                    logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
+                    logger.info('✅ Email de bienvenida enviado EXITOSAMENTE', { email, messageId: result.messageId });
                 } else {
-                    logger.warn('Email de bienvenida no enviado', { email, reason: result.message });
+                    logger.error('❌ FALLÓ envío de email de bienvenida', { email, reason: result.message });
                 }
             })
             .catch(error => {
-                logger.error('Error al enviar email de bienvenida', { email, error: error.message });
+                logger.error('🔥 EXCEPCIÓN al enviar email de bienvenida', { email, error: error.message, stack: error.stack });
             });
 
         return user;
