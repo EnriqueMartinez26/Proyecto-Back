@@ -131,7 +131,7 @@ class EmailService {
      * @param {string} user.email - Email del usuario
      */
     async sendWelcomeEmail(user) {
-        const { name, email } = user;
+        const { name, email, verificationToken } = user;
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
         const html = `
@@ -178,15 +178,15 @@ class EmailService {
                                     </div>
                                     
                                     <p style="margin: 25px 0 30px; font-size: 16px; line-height: 1.7; color: #a0a0b9;">
-                                        Ya podés explorar nuestro catálogo, agregar juegos a tu wishlist y realizar compras de manera segura.
+                                        Para activar tu cuenta y comenzar a comprar, por favor verifica tu dirección de correo electrónico haciendo click en el siguiente botón:
                                     </p>
                                     
                                     <!-- CTA Button -->
                                     <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
                                         <tr>
                                             <td style="border-radius: 8px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);">
-                                                <a href="${frontendUrl}" target="_blank" style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.5px;">
-                                                    🛒 Explorar Tienda
+                                                <a href="${frontendUrl}/verificar-email?token=${verificationToken}" target="_blank" style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.5px;">
+                                                    ✅ Verificar Cuenta
                                                 </a>
                                             </td>
                                         </tr>

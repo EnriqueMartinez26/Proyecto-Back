@@ -38,6 +38,29 @@ exports.register = async (req, res, next) => {
     }
 };
 
+// @desc    Verificar email
+// @route   GET /api/auth/verify
+// @access  Public
+exports.verifyEmail = async (req, res, next) => {
+    try {
+        const { token } = req.query;
+        if (!token) {
+            const error = new Error('Token no proporcionado');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        await AuthService.verifyEmail(token);
+
+        res.status(200).json({
+            success: true,
+            message: 'Email verificado exitosamente. Ya puedes iniciar sesión.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 // @desc    Login usuario
 // @route   POST /api/auth/login
 // @access  Public

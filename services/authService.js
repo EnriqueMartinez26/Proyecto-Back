@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const emailService = require('../services/emailService');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
 
 class AuthService {
     // Registrar un nuevo usuario
@@ -13,17 +14,23 @@ class AuthService {
             throw error;
         }
 
+        // Generar token de verificación
+        const verificationToken = crypto.randomBytes(20).toString('hex');
+
         const user = await User.create({
             name,
             email,
-            password
+            password,
+            verificationToken,
+            isVerified: false
         });
 
         // Envío de email ASÍNCRONO (Fire & Forget)
         // Evitamos bloquear la respuesta por timeouts en SMTP
+        // Pasamos el token al servicio de email
         logger.info(`[AuthService] Iniciando proceso de envío de email de bienvenida a: ${email}`);
 
-        emailService.sendWelcomeEmail({ name, email })
+        emailService.sendWelcomeEmail({ name, email, verificationToken })
             .then(result => {
                 if (result.success) {
                     logger.info('✅ Email de bienvenida enviado EXITOSAMENTE', { email, messageId: result.messageId });
@@ -34,6 +41,23 @@ class AuthService {
             .catch(error => {
                 logger.error('🔥 EXCEPCIÓN al enviar email de bienvenida', { email, error: error.message, stack: error.stack });
             });
+
+        return user;
+    }
+
+    // Verificar email
+    async verifyEmail(token) {
+        const user = await User.findOne({ verificationToken: token });
+
+        if (!user) {
+            const error = new Error('Token de verificación inválido');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        user.isVerified = true;
+        user.verificationToken = undefined;
+        await user.save();
 
         return user;
     }
