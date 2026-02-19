@@ -101,30 +101,28 @@ app.get('/api/test-email-diag', async (req, res) => {
 // Configuración CORS con Logging
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como apps móviles o curl)
     if (!origin) return callback(null, true);
 
     const allowedOrigins = [
       'http://localhost:3000',
-      'http://localhost:9002',
-      'http://localhost:9005',
-      'https://unsubducted-subuncinate-brittni.ngrok-free.dev',
+      'https://4funstore-vercel.vercel.app', // Tu URL de producción
       process.env.FRONTEND_URL
     ];
 
-    // Lógica flexible para Vercel y desarrollo
+    // Permitir cualquier subdominio de vercel que contenga tu proyecto
     const isAllowedVercel = origin.includes('vercel.app') && origin.includes('4funstore');
-    const isAllowedLocal = origin.startsWith('http://192.168.') || origin.startsWith('http://localhost');
-    const isAllowedNgrok = origin.includes('ngrok');
 
-    if (allowedOrigins.indexOf(origin) !== -1 || isAllowedVercel || isAllowedLocal || isAllowedNgrok) {
+    if (allowedOrigins.indexOf(origin) !== -1 || isAllowedVercel) {
       callback(null, true);
     } else {
-      logger.warn(`Bloqueo CORS para origen desconocido: ${origin}`);
-      callback(new Error('Bloqueado por CORS'));
+      // IMPORTANTE: No lances Error, mejor loguea y rechaza silenciosamente para evitar crasheos
+      logger.warn(`CORS rejected for origin: ${origin}`);
+      callback(null, false);
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
 }));
 
 app.use(express.json({ limit: '10kb' }));
