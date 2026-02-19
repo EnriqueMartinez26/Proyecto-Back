@@ -1,7 +1,10 @@
+const logger = require('../utils/logger');
+
 const validateEnv = () => {
   const requiredEnvVars = [
-    'MONGODB_URI',  
-    'JWT_SECRET'
+    'MONGODB_URI',
+    'JWT_SECRET',
+    'FRONTEND_URL'
   ];
 
   const missingVars = requiredEnvVars.filter(
@@ -9,15 +12,15 @@ const validateEnv = () => {
   );
 
   if (missingVars.length > 0) {
-    throw new Error(
-      `Missing required environment variables: ${missingVars.join(', ')}`
-    );
-  }
-  if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
-    console.warn('⚠️  JWT_SECRET should be at least 32 characters long');
+    logger.error(`❌ FATAL ERROR: Faltan variables de entorno requeridas: ${missingVars.join(', ')}`);
+    process.exit(1); // Detener la aplicación inmediatamente
   }
 
-  console.log('✅ Environment variables validated successfully');
+  if (process.env.JWT_SECRET.length < 32) {
+    logger.warn('⚠️  ADVERTENCIA: JWT_SECRET es muy corta. Debería tener al menos 32 caracteres para ser segura.');
+  }
+
+  logger.info('✅ Variables de entorno validadas correctamente.');
 };
 
 module.exports = validateEnv;

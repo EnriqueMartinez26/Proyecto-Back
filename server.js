@@ -1,57 +1,90 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
+const mongoSanitize = require('express-mongo-sanitize');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/database');
+const errorHandler = require('./middlewares/errorHandler');
+const validateEnv = require('./middlewares/validateEnv');
+const logger = require('./utils/logger'); // Importar Winston
 
-// Cargar variables de entorno
 dotenv.config();
-
-// Conectar a la base de datos
+validateEnv();
 connectDB();
 
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json());
+// Confiar en el proxy (necesario para cookies seguras en Render/Vercel)
+app.set('trust proxy', 1);
+
+// Seguridad de Headers
+app.use(helmet());
+
+// Rate Limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  message: { success: false, message: "Demasiadas peticiones, intenta más tarde." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', limiter);
+
+// --- MIDDLEWARE DE LOGGING (NUEVO) ---
+// Registra cada petición HTTP que llega al servidor
+app.use((req, res, next) => {
+  logger.info(`HTTP Request: ${req.method} ${req.url}`, {
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+  next();
+});
+
+// Configuración CORS con Logging
+app.use(require('./config/cors'));
+
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(mongoSanitize());
 
-// Importar rutas existentes
-const authRoutes = require('./routes/authRoutes');
-const cartRoutes = require('./routes/cartRoutes');
+// Rutas
+app.use('/api', require('./routes/debugRoutes')); // Rutas de Debug
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/cart', require('./routes/cartRoutes'));
+app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/wishlist', require('./routes/wishlistRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+app.use('/api/users', require('./routes/userRoutes'));
 
-// Rutas existentes
-app.use('/api/auth', authRoutes);
-app.use('/api/cart', cartRoutes);
+app.use('/api/platforms', require('./routes/platformRoutes'));
+app.use('/api/genres', require('./routes/genreRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes')); // Nuevo Dashboard
 
-// Ruta de health check
+app.use('/api/keys', require('./routes/keyRoutes')); // Rutas de Keys
+app.use('/api/coupons', require('./routes/couponRoutes')); // Rutas de Cupones
+app.use('/api/contact', require('./routes/contactRoutes'));
+
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString() 
-    });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Manejo de rutas no encontradas
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Ruta no encontrada'
-    });
+// Manejo de 404
+app.use((req, res, next) => {
+  logger.warn(`Ruta no encontrada (404): ${req.method} ${req.originalUrl}`);
+  const error = new Error(`Ruta no encontrada - ${req.originalUrl}`);
+  error.statusCode = 404;
+  next(error);
 });
 
-// Manejo de errores
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({
-        success: false,
-        message: 'Error en el servidor',
-        error: err.message
-    });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
-    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+  logger.info(`���️  Seguridad Activada (Helmet + RateLimit)`);
+  logger.info(`✅ Servidor corriendo en puerto ${PORT}`);
+  logger.info(`��� Modo: ${process.env.NODE_ENV}`);
 });

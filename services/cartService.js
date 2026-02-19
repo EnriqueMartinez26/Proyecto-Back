@@ -1,0 +1,141 @@
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
+const ProductService = require('../services/productService');
+const logger = require('../utils/logger');
+
+const PRODUCT_FIELDS = 'nombre precio imagenUrl stock plataformaId generoId tipo descripcion desarrollador fechaLanzamiento calificacion activo';
+
+// Helper for unified DTO
+async function getCartWithDTO(userId) {
+    const cart = await Cart.findOne({ user: userId })
+        .populate({
+            path: 'items.product',
+            select: PRODUCT_FIELDS,
+            populate: [
+                { path: 'plataformaId', select: 'nombre' },
+                { path: 'generoId', select: 'nombre' }
+            ]
+        });
+
+    if (!cart) return { items: [] };
+
+    const transformedItems = cart.items.map(item => {
+        if (!item.product) return item;
+        const productDTO = ProductService.transformDTO(item.product);
+        const itemObj = item.toObject ? item.toObject() : item;
+        return { ...itemObj, product: productDTO };
+    });
+
+    const cartResponse = cart.toObject ? cart.toObject() : cart;
+    cartResponse.items = transformedItems;
+    return cartResponse;
+}
+
+exports.getCart = async (userId) => {
+    return await getCartWithDTO(userId);
+};
+
+exports.addToCart = async (userId, productId, quantity) => {
+    // Validar que el producto existe, está activo y tiene stock
+    const product = await Product.findById(productId);
+    if (!product) {
+        const error = new Error('Producto no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+    if (!product.activo) {
+        const error = new Error('Este producto ya no está disponible');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    // Verificar stock considerando cantidad ya en carrito
+    let cart = await Cart.findOne({ user: userId });
+    let currentQuantityInCart = 0;
+    if (cart) {
+        const existingItem = cart.items.find(p => p.product.toString() === productId);
+        if (existingItem) {
+            currentQuantityInCart = existingItem.quantity;
+        }
+    }
+
+    const totalRequested = currentQuantityInCart + quantity;
+    if (product.stock < totalRequested) {
+        const error = new Error(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQuantityInCart}`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (!cart) {
+        cart = await Cart.create({
+            user: userId,
+            items: [{ product: productId, quantity }]
+        });
+    } else {
+        const itemIndex = cart.items.findIndex(p => p.product.toString() === productId);
+        if (itemIndex > -1) {
+            cart.items[itemIndex].quantity += quantity;
+        } else {
+            cart.items.push({ product: productId, quantity });
+        }
+        cart.updatedAt = Date.now();
+        await cart.save();
+    }
+
+    logger.info(`Item agregado al carrito para usuario: ${userId}`);
+    return await getCartWithDTO(userId);
+};
+
+exports.updateCartItem = async (userId, itemId, quantity) => {
+    const cart = await Cart.findOne({ user: userId });
+
+    if (!cart) {
+        const error = new Error('Carrito no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    const item = cart.items.id(itemId);
+    if (!item) {
+        const error = new Error('Item no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    item.quantity = quantity;
+    await cart.save();
+
+    logger.info(`Item actualizado en carrito para usuario: ${userId}`);
+    return await getCartWithDTO(userId);
+};
+
+exports.removeFromCart = async (userId, itemId) => {
+    const cart = await Cart.findOne({ user: userId });
+
+    if (!cart) {
+        const error = new Error('Carrito no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    cart.items = cart.items.filter(item => item._id.toString() !== itemId);
+    await cart.save();
+
+    logger.info(`Item eliminado del carrito para usuario: ${userId}`);
+    return await getCartWithDTO(userId);
+};
+
+exports.clearCart = async (userId) => {
+    const cart = await Cart.findOne({ user: userId });
+    if (!cart) {
+        const error = new Error('Carrito no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
+
+    cart.items = [];
+    await cart.save();
+
+    logger.info(`Carrito vaciado para usuario: ${userId}`);
+    return cart;
+};
