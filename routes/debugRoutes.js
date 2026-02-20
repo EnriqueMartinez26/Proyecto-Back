@@ -6,7 +6,8 @@ const logger = require('../utils/logger');
 // Nota: Ruta temporal para diagnóstico de email.
 // Requiere clave estática ya que opera fuera del flujo de autenticación estándar.
 router.get('/test-email-diag', async (req, res) => {
-    if (req.query.key !== 'KUKI_DEBUG_2024') {
+    const debugKey = process.env.DEBUG_KEY || 'KUKI_DEBUG_2024';
+    if (req.query.key !== debugKey) {
         return res.status(403).json({ error: 'Acceso Denegado' });
     }
 
