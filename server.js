@@ -16,13 +16,11 @@ connectDB();
 
 const app = express();
 
-// Confiar en el proxy (necesario para cookies seguras en Render/Vercel)
+// Verificar proxy para funcionamiento de cookies seguras en balanceadores de carga (Render/Vercel).
 app.set('trust proxy', 1);
 
-// Seguridad de Headers
 app.use(helmet());
 
-// Rate Limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
@@ -32,8 +30,6 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// --- MIDDLEWARE DE LOGGING (NUEVO) ---
-// Registra cada petición HTTP que llega al servidor
 app.use((req, res, next) => {
   logger.info(`HTTP Request: ${req.method} ${req.url}`, {
     ip: req.ip,
@@ -42,7 +38,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Configuración CORS con Logging
 app.use(require('./config/cors'));
 
 app.use(express.json({ limit: '10kb' }));
@@ -50,8 +45,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(mongoSanitize());
 
-// Rutas
-app.use('/api', require('./routes/debugRoutes')); // Rutas de Debug
+app.use('/api', require('./routes/debugRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
@@ -62,17 +56,16 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/platforms', require('./routes/platformRoutes'));
 app.use('/api/genres', require('./routes/genreRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
-app.use('/api/dashboard', require('./routes/dashboardRoutes')); // Nuevo Dashboard
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 
-app.use('/api/keys', require('./routes/keyRoutes')); // Rutas de Keys
-app.use('/api/coupons', require('./routes/couponRoutes')); // Rutas de Cupones
+app.use('/api/keys', require('./routes/keyRoutes'));
+app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/contact', require('./routes/contactRoutes'));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Manejo de 404
 app.use((req, res, next) => {
   logger.warn(`Ruta no encontrada (404): ${req.method} ${req.originalUrl}`);
   const error = new Error(`Ruta no encontrada - ${req.originalUrl}`);
