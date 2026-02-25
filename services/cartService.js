@@ -11,22 +11,18 @@ async function getCartWithDTO(userId) {
         .populate({
             path: 'items.product',
             select: PRODUCT_FIELDS,
-            populate: [
-                { path: 'plataformaId', select: 'nombre' },
-                { path: 'generoId', select: 'nombre' }
-            ]
-        });
+        })
+        .lean();
 
     if (!cart) return { items: [] };
 
     const transformedItems = cart.items.map(item => {
         if (!item.product) return item;
         const productDTO = ProductService.transformDTO(item.product);
-        const itemObj = item.toObject ? item.toObject() : item;
-        return { ...itemObj, product: productDTO };
+        return { ...item, product: productDTO };
     });
 
-    const cartResponse = cart.toObject ? cart.toObject() : cart;
+    const cartResponse = { ...cart };
     cartResponse.items = transformedItems;
     return cartResponse;
 }

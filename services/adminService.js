@@ -4,55 +4,50 @@ const User = require('../models/User');
 const logger = require('../utils/logger');
 
 exports.getDashboardStats = async () => {
-    // 1. KPIs
-    const totalUsers = await User.countDocuments();
-    const activeProducts = await Product.countDocuments({ activo: true });
-
-    // Low Stock (e.g. less than 10)
-    const lowStockCount = await Product.countDocuments({ activo: true, stock: { $lt: 10 } });
-
-    // Total Revenue (Only Paid Orders)
-    const revenueResult = await Order.aggregate([
-        { $match: { isPaid: true } },
-        { $group: { _id: null, total: { $sum: '$totalPrice' } } }
-    ]);
-    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
-
-    // 2. Revenue Chart (Last 6 Months)
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-    const revenueChart = await Order.aggregate([
-        {
-            $match: {
-                isPaid: true,
-                paidAt: { $gte: sixMonthsAgo }
-            }
-        },
-        {
-            $group: {
-                _id: { $month: '$paidAt' },
-                total: { $sum: '$totalPrice' }
-            }
-        },
-        { $sort: { _id: 1 } } // Sort by month index
+    // Parallelize all independent queries
+    const [
+        totalUsers,
+        activeProducts,
+        lowStockCount,
+        revenueResult,
+        revenueChart,
+        recentOrders
+    ] = await Promise.all([
+        User.countDocuments(),
+        Product.countDocuments({ activo: true }),
+        Product.countDocuments({ activo: true, stock: { $lt: 10 } }),
+        Order.aggregate([
+            { $match: { isPaid: true } },
+            { $group: { _id: null, total: { $sum: '$totalPrice' } } }
+        ]),
+        Order.aggregate([
+            { $match: { isPaid: true, paidAt: { $gte: sixMonthsAgo } } },
+            {
+                $group: {
+                    _id: { year: { $year: '$paidAt' }, month: { $month: '$paidAt' } },
+                    total: { $sum: '$totalPrice' }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1 } }
+        ]),
+        Order.find()
+            .select('totalPrice user createdAt isPaid orderStatus')
+            .populate('user', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .lean()
     ]);
 
-    // Map month numbers to names (optional, or send numeric)
+    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].total : 0;
+
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const formattedChart = revenueChart.map(item => ({
-        name: monthNames[item._id - 1], // mongo returns 1-12
+        name: monthNames[item._id.month - 1],
         total: item.total
     }));
-
-    // 3. Recent Sales (Last 5)
-    // We need User Name, Email, and Amount.
-    const recentOrders = await Order.find()
-        .select('totalPrice user createdAt isPaid orderStatus')
-        .populate('user', 'name email')
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean();
 
     const formattedRecentSales = recentOrders.map(order => ({
         id: order._id,

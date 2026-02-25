@@ -82,7 +82,7 @@ exports.getProfile = async (req, res, next) => {
         const user = await UserService.getUserById(req.user.id);
         res.status(200).json({
             success: true,
-            data: user
+            user
         });
     } catch (error) {
         next(error);

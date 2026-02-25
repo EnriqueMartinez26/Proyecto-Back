@@ -59,5 +59,7 @@ const orderSchema = new mongoose.Schema({
 
 // Index para optimizar getUserOrders
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ orderStatus: 1 });
+orderSchema.index({ isPaid: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

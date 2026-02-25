@@ -21,7 +21,7 @@ router.post('/', protect, createOrder);
 router.get('/', protect, authorize('admin'), getAllOrders);
 router.get('/user', protect, getUserOrders);
 router.get('/:id', protect, getOrder);
-router.put('/:id/pay', protect, updateOrderToPaid);
+router.put('/:id/pay', protect, authorize('admin'), updateOrderToPaid);
 router.patch('/:id/status', protect, authorize('admin'), updateOrderStatus); // New Requirement (PATCH)
 router.put('/:id/deliver', protect, authorize('admin'), updateOrderStatus); // Legacy support
 

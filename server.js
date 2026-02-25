@@ -4,6 +4,8 @@ const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
+const hpp = require('hpp');
 const connectDB = require('./config/database');
 const errorHandler = require('./middlewares/errorHandler');
 const validateEnv = require('./middlewares/validateEnv');
@@ -43,6 +45,8 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(mongoSanitize());
+app.use(compression());
+app.use(hpp());
 
 app.use('/api', require('./routes/debugRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
@@ -60,6 +64,7 @@ app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/keys', require('./routes/keyRoutes'));
 app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/contact', require('./routes/contactRoutes'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -32,7 +32,6 @@ class OrderService {
     for (const item of orderItems) {
       const product = await Product.findById(item.product);
       if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
-      if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
 
       // STOCK CHECK CRÍTICO (Fase 1)
       if (product.tipo === 'Digital') {
@@ -180,7 +179,12 @@ class OrderService {
       const manifest = `id:${dataId};request-id:${headers['x-request-id']};ts:${ts};`;
       const hmac = crypto.createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET);
       const digest = hmac.update(manifest).digest('hex');
-      if (QH !== digest) logger.warn('⚠️ Firma de webhook inválida (continuando en dev)');
+      if (QH !== digest) {
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('Firma de webhook inválida');
+        }
+        logger.warn('⚠️ Firma de webhook inválida (continuando en dev)');
+      }
     }
 
     const client = getMpClient();
@@ -193,7 +197,7 @@ class OrderService {
       .populate('orderItems.product');
 
     if (!order) throw new Error('Orden no encontrada');
-    if (order.orderStatus === 'pagado') return { status: 'ok' };
+    if (order.isPaid) return { status: 'ok' };
 
     if (paymentInfo.status === 'approved') {
       order.isPaid = true;

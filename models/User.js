@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
         required: [true, 'Por favor proporcione un email'],
         unique: true,
         lowercase: true,
-        match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Por favor proporcione un email válido']
+        match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,})+$/, 'Por favor proporcione un email válido']
     },
     password: {
         type: String,
@@ -31,16 +31,23 @@ const userSchema = new mongoose.Schema({
         default: false
     },
     verificationToken: String,
+    verificationTokenExpire: {
+        type: Date,
+        default: null
+    },
     createdAt: {
         type: Date,
         default: Date.now
     }
 });
 
+// Índices
+userSchema.index({ verificationToken: 1 }, { sparse: true });
+
 // Encriptar contraseña usando bcrypt
 userSchema.pre('save', async function (next) {
     if (!this.isModified('password')) {
-        next();
+        return next();
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);

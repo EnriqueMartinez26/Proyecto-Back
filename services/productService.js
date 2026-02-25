@@ -47,7 +47,6 @@ const toResponseDTO = (productDoc) => {
         trailerUrl: p.trailerUrl || '',
         rating: p.calificacion,
         stock: p.stock,
-        stock: p.stock,
         active: p.activo,
         specPreset: p.specPreset,
         requirements: p.requisitos,
@@ -148,16 +147,17 @@ exports.getProducts = async (query = {}) => {
         }
     }
 
-    // Ejecución con Populate y Lean para performance
-    const products = await Product.find(filter)
-        .populate('platformObj')
-        .populate('genreObj')
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .sort(sortOptions)
-        .lean();
-
-    const count = await Product.countDocuments(filter);
+    // Ejecución con Populate y Lean para performance (parallelized)
+    const [products, count] = await Promise.all([
+        Product.find(filter)
+            .populate('platformObj')
+            .populate('genreObj')
+            .skip((pageNum - 1) * limitNum)
+            .limit(limitNum)
+            .sort(sortOptions)
+            .lean(),
+        Product.countDocuments(filter)
+    ]);
 
     logger.info(`Productos obtenidos: ${products.length} de ${count} totales`, {
         filter,
@@ -270,7 +270,11 @@ exports.updateProduct = async (id, data) => {
 
 exports.deleteProduct = async (id) => {
     const product = await Product.findByIdAndUpdate(id, { activo: false }, { new: true });
-    if (!product) throw new Error('ProductNotFound');
+    if (!product) {
+        const error = new Error('Producto no encontrado');
+        error.statusCode = 404;
+        throw error;
+    }
     return true;
 };
 

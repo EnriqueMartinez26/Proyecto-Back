@@ -119,7 +119,6 @@ productSchema.virtual('genreObj', {
 // Índices para búsqueda y filtrado
 productSchema.index({ nombre: 'text', descripcion: 'text' });
 productSchema.index({ plataformaId: 1, generoId: 1 }); // Índice compuesto para filtros combinados
-productSchema.index({ plataformaId: 1 });
 productSchema.index({ generoId: 1 });
 productSchema.index({ tipo: 1 });
 productSchema.index({ precio: 1 });

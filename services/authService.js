@@ -22,6 +22,7 @@ class AuthService {
             email,
             password,
             verificationToken,
+            verificationTokenExpire: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
             isVerified: false
         });
 
@@ -45,10 +46,13 @@ class AuthService {
 
     // Verificar email
     async verifyEmail(token) {
-        const user = await User.findOne({ verificationToken: token });
+        const user = await User.findOne({
+            verificationToken: token,
+            verificationTokenExpire: { $gt: Date.now() }
+        });
 
         if (!user) {
-            const error = new Error('Token de verificación inválido');
+            const error = new Error('Token de verificación inválido o expirado');
             error.statusCode = 400;
             throw error;
         }

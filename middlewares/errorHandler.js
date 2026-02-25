@@ -4,12 +4,17 @@ const logger = require('../utils/logger');
  * Middleware Global de Errores con Winston Logging
  */
 const errorHandler = (err, req, res, next) => {
-  // Loguear el error completo en el servidor (Archivo error.log)
+  // Sanitize body before logging — remove sensitive fields
+  const safeBody = { ...req.body };
+  delete safeBody.password;
+  delete safeBody.confirmPassword;
+  delete safeBody.token;
+
   logger.error(`Error del Servidor: ${err.message}`, { 
     stack: err.stack, 
     url: req.originalUrl, 
     method: req.method,
-    body: req.body // Opcional: Cuidado con datos sensibles aquí
+    body: safeBody
   });
 
   let statusCode = err.statusCode || 500;

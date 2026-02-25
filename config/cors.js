@@ -11,8 +11,8 @@ const corsOptions = {
             process.env.FRONTEND_URL
         ].filter(Boolean);
 
-        // Permitir previews dinámicos de Vercel
-        const isAllowedVercel = origin.includes('vercel.app') && origin.includes('4funstore');
+        // Permitir previews dinámicos de Vercel (solo subdominios de 4funstore)
+        const isAllowedVercel = /^https:\/\/4funstore[a-z0-9-]*\.vercel\.app$/.test(origin);
 
         if (allowedOrigins.includes(origin) || isAllowedVercel) {
             callback(null, true);
@@ -24,7 +24,7 @@ const corsOptions = {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
+    allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 module.exports = cors(corsOptions);

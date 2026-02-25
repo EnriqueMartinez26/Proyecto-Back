@@ -27,16 +27,16 @@ function createMetadataService(Model, { singular, plural, notFoundMsg, productFi
 
     return {
         async getAll() {
-            const docs = await Model.find({ activo: true });
+            const docs = await Model.find({ activo: true }).lean();
             logger.info(`${plural} obtenidos: ${docs.length}`);
             return docs.map(toDTO);
         },
 
         async getById(id) {
-            let doc = await Model.findOne({ id });
+            let doc = await Model.findOne({ id }).lean();
 
             if (!doc && MONGO_ID_REGEX.test(id)) {
-                doc = await Model.findById(id);
+                doc = await Model.findById(id).lean();
             }
 
             if (!doc) {
@@ -89,15 +89,17 @@ function createMetadataService(Model, { singular, plural, notFoundMsg, productFi
                 { id },
                 {
                     $set: updateData,
-                    $setOnInsert: { id: newId || id },
                 },
                 {
                     new: true,
-                    upsert: true,
+                    upsert: false,
                     runValidators: true,
-                    setDefaultsOnInsert: true,
                 }
             );
+
+            if (!doc) {
+                throw new ErrorResponse(notFoundMsg || `${singular} no encontrado`, 404);
+            }
 
             if (newId && newId !== id && doc && productField) {
                 const result = await Product.updateMany(
