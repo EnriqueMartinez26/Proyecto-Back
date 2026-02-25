@@ -42,13 +42,15 @@ class EmailService {
             },
             tls: {
                 rejectUnauthorized: false // Permite certificados auto-firmados en desarrollo
-            }
+            },
+            connectionTimeout: 10000,  // 10 seg para conectar
+            greetingTimeout: 10000,    // 10 seg para greeting SMTP
+            socketTimeout: 15000       // 15 seg timeout general del socket
         });
 
-        // Construimos el remitente: "Nombre <email>" o solo email
-        const senderName = SMTP_FROM_NAME || '4Fun Store';
-        const senderEmail = SMTP_FROM_EMAIL || SMTP_USER;
-        this.fromAddress = `"${senderName}" <${senderEmail}>`;
+        // Guardamos nombre y email del remitente por separado
+        this.senderName = SMTP_FROM_NAME || '4Fun Store';
+        this.senderEmail = SMTP_FROM_EMAIL || SMTP_USER;
 
         this.initialized = true;
 
@@ -86,7 +88,7 @@ class EmailService {
 
         try {
             const mailOptions = {
-                from: `"4Fun Store" <${this.fromAddress}>`,
+                from: `"${this.senderName}" <${this.senderEmail}>`,
                 to,
                 subject,
                 html,
