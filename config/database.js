@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 
 const connectDB = async () => {
   try {
@@ -11,42 +12,42 @@ const connectDB = async () => {
 
     const conn = await mongoose.connect(process.env.MONGODB_URI, options);
 
-    console.log('✅ MongoDB conectado exitosamente');
-    console.log(`📊 Base de datos: ${conn.connection.name}`);
-    console.log(`🌐 Host: ${conn.connection.host}`);
-    
+    logger.info('✅ MongoDB conectado exitosamente');
+    logger.info(`📊 Base de datos: ${conn.connection.name}`);
+    logger.info(`🌐 Host: ${conn.connection.host}`);
+
   } catch (error) {
-    console.error('❌ Error conectando a MongoDB:', error.message);
-    
+    logger.error(`❌ Error conectando a MongoDB: ${error.message}`);
+
     // Mensajes de error más específicos
     if (error.name === 'MongoNetworkError') {
-      console.error('💡 Verifica tu conexión a internet y las credenciales de MongoDB Atlas');
+      logger.error('💡 Verifica tu conexión a internet y las credenciales de MongoDB Atlas');
     }
     if (error.name === 'MongooseServerSelectionError') {
-      console.error('💡 Verifica que tu IP esté en la lista blanca de MongoDB Atlas');
+      logger.error('💡 Verifica que tu IP esté en la lista blanca de MongoDB Atlas');
     }
-    
+
     process.exit(1);
   }
 };
 
 // Eventos de conexión
 mongoose.connection.on('connected', () => {
-  console.log('🔗 Mongoose conectado a MongoDB');
+  logger.info('🔗 Mongoose conectado a MongoDB');
 });
 
 mongoose.connection.on('error', (err) => {
-  console.error('❌ Error de conexión de Mongoose:', err);
+  logger.error('❌ Error de conexión de Mongoose:', err);
 });
 
 mongoose.connection.on('disconnected', () => {
-  console.log('🔌 Mongoose desconectado');
+  logger.info('🔌 Mongoose desconectado');
 });
 
 // Manejo de cierre graceful
 process.on('SIGINT', async () => {
   await mongoose.connection.close();
-  console.log('🛑 Mongoose desconectado por terminación de la aplicación');
+  logger.info('🛑 Mongoose desconectado por terminación de la aplicación');
   process.exit(0);
 });
 

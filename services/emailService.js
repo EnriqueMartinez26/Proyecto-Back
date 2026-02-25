@@ -1,0 +1,358 @@
+const nodemailer = require('nodemailer');
+const logger = require('../utils/logger');
+
+/**
+ * Servicio de Email para la aplicación 4Fun
+ * Soporta Gmail, Hotmail y Outlook
+ */
+class EmailService {
+    constructor() {
+        this.transporter = null;
+        this.initialized = false;
+    }
+
+    /**
+     * Inicializa el transportador de correo
+     * Compatible con Gmail, Hotmail, Outlook y otros proveedores SMTP
+     */
+    initialize() {
+        if (this.initialized) return;
+
+        // Leemos las nuevas variables del .env
+        const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_EMAIL, SMTP_FROM_NAME } = process.env;
+
+        // Verificar que las variables de entorno están configuradas
+        if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+            logger.warn('Configuración de email incompleta (Faltan variables SMTP).', {
+                host: SMTP_HOST,
+                user: SMTP_USER ? 'Set' : 'Missing',
+                pass: SMTP_PASS ? 'Set' : 'Missing'
+            });
+            return;
+        }
+
+        // Configuración del transportador para Gmail (Puerto 587 TLS)
+        this.transporter = nodemailer.createTransport({
+            host: SMTP_HOST,
+            port: parseInt(SMTP_PORT) || 587,
+            secure: parseInt(SMTP_PORT) === 465, // true solo para 465
+            auth: {
+                user: SMTP_USER,
+                pass: SMTP_PASS
+            },
+            tls: {
+                rejectUnauthorized: false // Permite certificados auto-firmados en desarrollo
+            }
+        });
+
+        // Construimos el remitente: "Nombre <email>" o solo email
+        const senderName = SMTP_FROM_NAME || '4Fun Store';
+        const senderEmail = SMTP_FROM_EMAIL || SMTP_USER;
+        this.fromAddress = `"${senderName}" <${senderEmail}>`;
+
+        this.initialized = true;
+
+        logger.info('Servicio de email SMTP inicializado', {
+            host: SMTP_HOST,
+            user: SMTP_USER.substring(0, 3) + '***@' + (SMTP_USER.split('@')[1] || 'gmail.com')
+        });
+    }
+
+    /**
+     * Verifica si el servicio de email está disponible
+     */
+    isAvailable() {
+        return this.initialized && this.transporter !== null;
+    }
+
+    /**
+     * Envía un correo electrónico
+     * @param {Object} options - Opciones del correo
+     * @param {string} options.to - Destinatario
+     * @param {string} options.subject - Asunto
+     * @param {string} options.html - Contenido HTML
+     * @param {string} options.text - Contenido texto plano (opcional)
+     */
+    async sendEmail({ to, subject, html, text }) {
+        // Inicializar si no está inicializado
+        if (!this.initialized) {
+            this.initialize();
+        }
+
+        if (!this.isAvailable()) {
+            logger.warn('Intento de envío de email pero el servicio no está disponible', { to, subject });
+            return { success: false, message: 'Servicio de email no configurado' };
+        }
+
+        try {
+            const mailOptions = {
+                from: `"4Fun Store" <${this.fromAddress}>`,
+                to,
+                subject,
+                html,
+                text: text || this.htmlToText(html)
+            };
+
+            const info = await this.transporter.sendMail(mailOptions);
+
+            logger.info('Email enviado exitosamente', {
+                to,
+                subject,
+                messageId: info.messageId
+            });
+
+            return { success: true, messageId: info.messageId };
+        } catch (error) {
+            logger.error('Error al enviar email', {
+                to,
+                subject,
+                error: error.message,
+                stack: error.stack
+            });
+            return { success: false, message: error.message };
+        }
+    }
+
+    /**
+     * Convierte HTML básico a texto plano
+     */
+    htmlToText(html) {
+        return html
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    /**
+     * Envía correo de bienvenida tras registro exitoso
+     * @param {Object} user - Datos del usuario
+     * @param {string} user.name - Nombre del usuario
+     * @param {string} user.email - Email del usuario
+     */
+    async sendWelcomeEmail(user) {
+        const { name, email, verificationToken } = user;
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f23;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0f0f23; padding: 40px 20px;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+                            
+                            <!-- Header -->
+                            <tr>
+                                <td style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 40px 40px 30px; text-align: center;">
+                                    <h1 style="margin: 0; font-size: 36px; font-weight: 700; color: #ffffff; letter-spacing: 2px;">
+                                        🎮 4FUN
+                                    </h1>
+                                    <p style="margin: 10px 0 0; font-size: 14px; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 3px;">
+                                        Tu tienda de videojuegos
+                                    </p>
+                                </td>
+                            </tr>
+                            
+                            <!-- Content -->
+                            <tr>
+                                <td style="padding: 50px 40px;">
+                                    <h2 style="margin: 0 0 20px; font-size: 28px; font-weight: 600; color: #ffffff;">
+                                        ¡Bienvenido/a, ${name}! 🎉
+                                    </h2>
+                                    
+                                    <p style="margin: 0 0 25px; font-size: 16px; line-height: 1.7; color: #a0a0b9;">
+                                        Tu cuenta ha sido creada exitosamente. Ahora sos parte de la comunidad <strong style="color: #667eea;">4Fun</strong>, donde encontrarás los mejores videojuegos y ofertas exclusivas.
+                                    </p>
+                                    
+                                    <div style="background: rgba(102, 126, 234, 0.1); border-left: 4px solid #667eea; padding: 20px; border-radius: 0 8px 8px 0; margin: 30px 0;">
+                                        <p style="margin: 0; font-size: 15px; color: #c0c0d9;">
+                                            <strong style="color: #667eea;">📧 Tu email registrado:</strong><br>
+                                            <span style="color: #ffffff;">${email}</span>
+                                        </p>
+                                    </div>
+                                    
+                                    <p style="margin: 25px 0 30px; font-size: 16px; line-height: 1.7; color: #a0a0b9;">
+                                        Para activar tu cuenta y comenzar a comprar, por favor verifica tu dirección de correo electrónico haciendo click en el siguiente botón:
+                                    </p>
+                                    
+                                    <!-- CTA Button -->
+                                    <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                                        <tr>
+                                            <td style="border-radius: 8px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);">
+                                                <a href="${frontendUrl}/verificar-email?token=${verificationToken}" target="_blank" style="display: inline-block; padding: 16px 40px; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; letter-spacing: 0.5px;">
+                                                    ✅ Verificar Cuenta
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            
+                            <!-- Features -->
+                            <tr>
+                                <td style="padding: 0 40px 40px;">
+                                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                                        <tr>
+                                            <td width="33%" style="padding: 15px; text-align: center; background: rgba(255,255,255,0.03); border-radius: 12px;">
+                                                <div style="font-size: 28px; margin-bottom: 10px;">🎮</div>
+                                                <div style="font-size: 13px; color: #a0a0b9;">Catálogo<br>Extenso</div>
+                                            </td>
+                                            <td width="10"></td>
+                                            <td width="33%" style="padding: 15px; text-align: center; background: rgba(255,255,255,0.03); border-radius: 12px;">
+                                                <div style="font-size: 28px; margin-bottom: 10px;">🔒</div>
+                                                <div style="font-size: 13px; color: #a0a0b9;">Compras<br>Seguras</div>
+                                            </td>
+                                            <td width="10"></td>
+                                            <td width="33%" style="padding: 15px; text-align: center; background: rgba(255,255,255,0.03); border-radius: 12px;">
+                                                <div style="font-size: 28px; margin-bottom: 10px;">⚡</div>
+                                                <div style="font-size: 13px; color: #a0a0b9;">Entrega<br>Inmediata</div>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                            
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background: rgba(0,0,0,0.2); padding: 30px 40px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
+                                    <p style="margin: 0 0 15px; font-size: 13px; color: #6b6b80;">
+                                        © ${new Date().getFullYear()} 4Fun Store. Todos los derechos reservados.
+                                    </p>
+                                    <p style="margin: 0; font-size: 12px; color: #4a4a5c;">
+                                        Si no creaste esta cuenta, puedes ignorar este correo.
+                                    </p>
+                                </td>
+                            </tr>
+                            
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        `;
+
+        return this.sendEmail({
+            to: email,
+            subject: '🎮 ¡Bienvenido/a a 4Fun! Tu cuenta ha sido creada',
+            html
+        });
+    }
+
+    /**
+     * Envía las claves digitales tras una compra confirmada
+     * @param {Object} user - Datos del usuario
+     * @param {Object} order - Datos de la orden
+     * @param {Array} keys - Array de objetos { productName, key }
+     */
+    async sendDigitalProductDelivery(user, order, keys) {
+        const { name, email } = user;
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+        // Generar filas de tabla para las keys
+        const keysHtml = keys.map(k => `
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <td style="padding: 15px; color: #ffffff;">${k.productName}</td>
+                <td style="padding: 15px; text-align: right;">
+                    <code style="background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 16px; letter-spacing: 1px; border: 1px solid rgba(102, 126, 234, 0.3);">
+                        ${k.key}
+                    </code>
+                </td>
+            </tr>
+        `).join('');
+
+        const html = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0f0f23;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #0f0f23; padding: 40px 20px;">
+                <tr>
+                    <td align="center">
+                        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+                            
+                            <!-- Header -->
+                            <tr>
+                                <td style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 40px 40px 30px; text-align: center;">
+                                    <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff; letter-spacing: 1px;">
+                                        🎮 ¡Tu Entrega Digital!
+                                    </h1>
+                                    <p style="margin: 10px 0 0; font-size: 14px; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 2px;">
+                                        Orden #${order._id.toString().slice(-6).toUpperCase()}
+                                    </p>
+                                </td>
+                            </tr>
+                            
+                            <!-- Content -->
+                            <tr>
+                                <td style="padding: 40px;">
+                                    <p style="margin: 0 0 25px; font-size: 16px; color: #a0a0b9;">
+                                        Hola <strong>${name}</strong>, gracias por tu compra. Aquí tienes tus claves de activación. ¡Que empiece el juego!
+                                    </p>
+                                    
+                                    <table width="100%" cellspacing="0" cellpadding="0" style="background: rgba(255,255,255,0.03); border-radius: 12px; overflow: hidden; margin-bottom: 30px;">
+                                        <thead>
+                                            <tr style="background: rgba(255,255,255,0.05); text-align: left;">
+                                                <th style="padding: 15px; color: #a0a0b9; font-size: 12px; text-transform: uppercase;">Producto</th>
+                                                <th style="padding: 15px; color: #a0a0b9; font-size: 12px; text-transform: uppercase; text-align: right;">Clave de Activación</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${keysHtml}
+                                        </tbody>
+                                    </table>
+                                    
+                                    <div style="background: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 15px; border-radius: 0 8px 8px 0; margin-bottom: 30px;">
+                                        <p style="margin: 0; font-size: 14px; color: #e0e0e0;">
+                                            <strong style="color: #ffc107;">Instrucciones:</strong> Copia la clave y actívala en la plataforma correspondiente (Steam, Epic, etc).
+                                        </p>
+                                    </div>
+    
+                                    <!-- CTA -->
+                                    <table role="presentation" cellspacing="0" cellpadding="0" style="margin: 0 auto;">
+                                        <tr>
+                                            <td style="border-radius: 8px; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);">
+                                                <a href="${frontendUrl}/orders/${order._id}" target="_blank" style="display: inline-block; padding: 14px 30px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none;">
+                                                    Ver Detalle de Orden
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+    
+                            <!-- Footer -->
+                            <tr>
+                                <td style="background: rgba(0,0,0,0.2); padding: 25px; text-align: center; border-top: 1px solid rgba(255,255,255,0.05);">
+                                    <p style="margin: 0; font-size: 12px; color: #6b6b80;">
+                                        ¿Dudas? Contactanos respondiendo a este correo.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </body>
+        </html>
+        `;
+
+        return this.sendEmail({
+            to: email,
+            subject: '🎮 Tus Keys de 4Fun han llegado',
+            html
+        });
+    }
+
+}
+
+module.exports = new EmailService();

@@ -5,7 +5,8 @@ const genreSchema = new mongoose.Schema({
     type: String,
     required: true,
     unique: true,
-    trim: true
+    trim: true,
+    match: [/^[a-z0-9-]+$/, 'El ID debe ser un slug válido (letras minúsculas, números y guiones)']
   },
   nombre: {
     type: String,
@@ -15,9 +16,16 @@ const genreSchema = new mongoose.Schema({
   activo: {
     type: Boolean,
     default: true
+  },
+  imageId: {
+    type: String,
+    default: 'https://placehold.co/600x400?text=No+Image'
   }
 }, {
   timestamps: true
 });
+
+// Índice para búsqueda por nombre
+genreSchema.index({ nombre: 'text' });
 
 module.exports = mongoose.model('Genre', genreSchema);

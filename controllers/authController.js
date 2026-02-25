@@ -1,156 +1,107 @@
-const User = require('../models/User');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const AuthService = require('../services/authService');
+const UserService = require('../services/userService');
 
-// Generar JWT
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET || 'your-secret-key', {
-        expiresIn: process.env.JWT_EXPIRE || '30d'
-    });
+// Helper para gestionar la cookie y respuesta del token
+const sendTokenResponse = (user, statusCode, res) => {
+    const token = user.getSignedJwtToken();
+
+    const options = {
+        expires: new Date(Date.now() + (process.env.JWT_COOKIE_EXPIRE || 30) * 24 * 60 * 60 * 1000),
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
+    };
+
+    res.status(statusCode)
+        .cookie('token', token, options)
+        .json({
+            success: true,
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role
+            }
+        });
 };
 
-// @desc    Registrar nuevo usuario
+// @desc    Registrar usuario
 // @route   POST /api/auth/register
 // @access  Public
-exports.register = async (req, res) => {
+exports.register = async (req, res, next) => {
     try {
-        const { name, email, password } = req.body;
-
-        // Validar campos
-        if (!name || !email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'Por favor proporcione nombre, email y contraseña'
-            });
-        }
-
-        // Verificar si el usuario ya existe
-        const userExists = await User.findOne({ email });
-        if (userExists) {
-            return res.status(400).json({
-                success: false,
-                message: 'El email ya está registrado'
-            });
-        }
-
-        // Hash de la contraseña
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // Crear usuario
-        const user = await User.create({
-            name,
-            email,
-            password: hashedPassword
-        });
-
-        // Generar token
-        const token = generateToken(user._id);
-
-        res.status(201).json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role
-            }
-        });
+        const user = await AuthService.register(req.body);
+        sendTokenResponse(user, 201, res);
     } catch (error) {
-        console.error('Error en registro:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error en el servidor',
-            error: error.message
-        });
+        next(error);
     }
 };
 
-// @desc    Login de usuario
+// @desc    Verificar email
+// @route   GET /api/auth/verify
+// @access  Public
+exports.verifyEmail = async (req, res, next) => {
+    try {
+        const { token } = req.query;
+        if (!token) {
+            const error = new Error('Token no proporcionado');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        await AuthService.verifyEmail(token);
+
+        res.status(200).json({
+            success: true,
+            message: 'Email verificado exitosamente. Ya puedes iniciar sesión.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Login usuario
 // @route   POST /api/auth/login
 // @access  Public
-exports.login = async (req, res) => {
+exports.login = async (req, res, next) => {
     try {
         const { email, password } = req.body;
-
-        // Validar campos
-        if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'Por favor proporcione email y contraseña'
-            });
-        }
-
-        // Verificar usuario
-        const user = await User.findOne({ email }).select('+password');
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                message: 'Credenciales inválidas'
-            });
-        }
-
-        // Verificar contraseña
-        const isPasswordValid = await bcrypt.compare(password, user.password);
-        if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
-                message: 'Credenciales inválidas'
-            });
-        }
-
-        // Generar token
-        const token = generateToken(user._id);
-
-        res.json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role
-            }
-        });
+        const user = await AuthService.login(email, password);
+        sendTokenResponse(user, 200, res);
     } catch (error) {
-        console.error('Error en login:', error);
-        res.status(500).json({ message: 'Error en login', error: error.message });
+        next(error);
     }
 };
 
-// @desc    Obtener perfil del usuario
+// @desc    Obtener perfil de usuario
 // @route   GET /api/auth/profile
 // @access  Private
-exports.getProfile = async (req, res) => {
+exports.getProfile = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id);
-        
-        res.json({
+        const user = await UserService.getUserById(req.user.id);
+        res.status(200).json({
             success: true,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                createdAt: user.createdAt
-            }
+            data: user
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Error al obtener perfil',
-            error: error.message
-        });
+        next(error);
     }
 };
 
-// @desc    Logout de usuario
-// @route   POST /api/auth/logout
-// @access  Private
-exports.logout = async (req, res) => {
-    res.json({
+// @desc    Cerrar sesión / Limpiar cookie
+// @route   GET /api/auth/logout
+// @access  Public
+exports.logout = async (req, res, next) => {
+    res.cookie('token', 'none', {
+        expires: new Date(Date.now() + 10 * 1000),
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
+    });
+
+    res.status(200).json({
         success: true,
-        message: 'Sesión cerrada exitosamente'
+        data: {}
     });
 };
