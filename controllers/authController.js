@@ -21,7 +21,10 @@ const sendTokenResponse = (user, statusCode, res) => {
                 id: user._id,
                 name: user.name,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                avatar: user.avatar || null,
+                phone: user.phone || null,
+                address: user.address || null
             }
         });
 };
@@ -82,7 +85,99 @@ exports.getProfile = async (req, res, next) => {
         const user = await UserService.getUserById(req.user.id);
         res.status(200).json({
             success: true,
-            user
+            user: {
+                id: user._id || user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                avatar: user.avatar || null,
+                phone: user.phone || null,
+                address: user.address || null,
+                isVerified: user.isVerified,
+                createdAt: user.createdAt
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Actualizar perfil propio (nombre, avatar, teléfono, dirección)
+// @route   PUT /api/auth/profile
+// @access  Private
+exports.updateProfile = async (req, res, next) => {
+    try {
+        const { name, avatar, phone, address } = req.body;
+        const user = await UserService.getUserById(req.user.id);
+
+        if (name !== undefined) user.name = name;
+        if (avatar !== undefined) user.avatar = avatar;
+        if (phone !== undefined) user.phone = phone;
+        if (address !== undefined) user.address = address;
+
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                avatar: user.avatar || null,
+                phone: user.phone || null,
+                address: user.address || null,
+                isVerified: user.isVerified,
+                createdAt: user.createdAt
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Cambiar contraseña
+// @route   PUT /api/auth/password
+// @access  Private
+exports.changePassword = async (req, res, next) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            const error = new Error('Se requiere la contraseña actual y la nueva.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        if (newPassword.length < 6) {
+            const error = new Error('La nueva contraseña debe tener al menos 6 caracteres.');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        // Necesitamos el password para comparar
+        const User = require('../models/User');
+        const user = await User.findById(req.user.id).select('+password');
+
+        if (!user) {
+            const error = new Error('Usuario no encontrado');
+            error.statusCode = 404;
+            throw error;
+        }
+
+        const isMatch = await user.matchPassword(currentPassword);
+        if (!isMatch) {
+            const error = new Error('La contraseña actual es incorrecta.');
+            error.statusCode = 401;
+            throw error;
+        }
+
+        user.password = newPassword;
+        await user.save(); // El pre-save hook encripta automáticamente
+
+        res.status(200).json({
+            success: true,
+            message: 'Contraseña actualizada correctamente.'
         });
     } catch (error) {
         next(error);

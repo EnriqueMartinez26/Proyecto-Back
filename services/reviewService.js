@@ -131,7 +131,7 @@ No incluyas texto adicional, solo el JSON.`
 
     // Populate para devolver datos completos
     const populated = await Review.findById(review._id)
-      .populate('user', 'name')
+      .populate('user', 'name avatar')
       .lean();
 
     return this.transformReview(populated);
@@ -166,7 +166,7 @@ No incluyas texto adicional, solo el JSON.`
         .sort(sortOption)
         .skip(skip)
         .limit(limitNum)
-        .populate('user', 'name')
+        .populate('user', 'name avatar')
         .lean(),
       Review.countDocuments({ product: productId })
     ]);
@@ -317,7 +317,8 @@ No incluyas texto adicional, solo el JSON.`
       id: review._id.toString(),
       user: {
         id: review.user?._id?.toString() || review.user?.toString(),
-        name: review.user?.name || 'Usuario'
+        name: review.user?.name || 'Usuario',
+        avatar: review.user?.avatar || null
       },
       productId: review.product.toString(),
       rating: review.rating,
