@@ -26,18 +26,20 @@ class AuthService {
         });
 
         logger.info(`[AuthService] Iniciando proceso de envío de email de bienvenida a: ${email}`);
-        try {
-            const emailResult = await emailService.sendWelcomeEmail({ name, email, verificationToken });
-            if (emailResult.success) {
-                logger.info('✅ Email de bienvenida enviado EXITOSAMENTE', { email, messageId: emailResult.messageId });
-            } else {
-                logger.error('❌ FALLÓ envío de email de bienvenida', { email, reason: emailResult.message });
-            }
-        } catch (error) {
-            // Capturamos el error pero NO lanzamos throw para no cancelar la creación del usuario si el email falla
-            logger.error('🔥 EXCEPCIÓN al enviar email de bienvenida', { email, error: error.message });
-        }
+        // Fire-and-forget — NO bloqueamos la respuesta HTTP con el email
+        emailService.sendWelcomeEmail({ name, email, verificationToken })
+            .then(result => {
+                if (result.success) {
+                    logger.info('✅ Email de bienvenida enviado', { email, messageId: result.messageId });
+                } else {
+                    logger.error('❌ FALLÓ envío de email', { email, reason: result.message });
+                }
+            })
+            .catch(error => {
+                logger.error('🔥 EXCEPCIÓN al enviar email', { email, error: error.message });
+            });
 
+        // La respuesta al usuario se envía INMEDIATAMENTE después de crear la cuenta
         return user;
     }
 
