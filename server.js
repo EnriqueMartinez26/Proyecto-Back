@@ -48,7 +48,6 @@ app.use(mongoSanitize());
 app.use(compression());
 app.use(hpp());
 
-app.use('/api', require('./routes/debugRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/cart', require('./routes/cartRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
