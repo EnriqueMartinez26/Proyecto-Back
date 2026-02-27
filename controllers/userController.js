@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Order = require('../models/Order');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 // @desc    Obtener lista de usuarios con paginación, búsqueda y filtros
@@ -60,9 +61,7 @@ exports.getUserById = async (req, res, next) => {
     const user = await User.findById(req.params.id).select('-password');
 
     if (!user) {
-      const error = new Error('Usuario no encontrado');
-      error.statusCode = 404;
-      throw error;
+      throw new ErrorResponse('Usuario no encontrado', 404);
     }
 
     // --- CRM ANALYTICS ---
@@ -112,9 +111,7 @@ exports.updateUser = async (req, res, next) => {
     ).select('-password');
 
     if (!user) {
-      const error = new Error('Usuario no encontrado');
-      error.statusCode = 404;
-      throw error;
+      throw new ErrorResponse('Usuario no encontrado', 404);
     }
 
     logger.info(`Usuario actualizado por Admin: ${req.user.email}`, { targetUser: user.email });
@@ -136,17 +133,13 @@ exports.deleteUser = async (req, res, next) => {
   try {
     // Protección de seguridad crítica: Evitar auto-eliminación
     if (req.user.id === req.params.id) {
-      const error = new Error('No puedes eliminar tu propia cuenta de administrador.');
-      error.statusCode = 400;
-      throw error;
+      throw new ErrorResponse('No puedes eliminar tu propia cuenta de administrador.', 400);
     }
 
     const user = await User.findById(req.params.id);
 
     if (!user) {
-      const error = new Error('Usuario no encontrado');
-      error.statusCode = 404;
-      throw error;
+      throw new ErrorResponse('Usuario no encontrado', 404);
     }
 
     // Antes de borrar, verificamos si tiene órdenes. 

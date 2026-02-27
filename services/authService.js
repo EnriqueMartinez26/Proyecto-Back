@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const emailService = require('../services/emailService');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
 
@@ -9,9 +10,7 @@ class AuthService {
         const userExists = await User.findOne({ email });
 
         if (userExists) {
-            const error = new Error('El usuario ya existe');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('El usuario ya existe', 400);
         }
 
         // Generar token de verificación
@@ -26,22 +25,21 @@ class AuthService {
             isVerified: false
         });
 
-        logger.info(`[AuthService] Iniciando proceso de envío de email de bienvenida a: ${email}`);
-        // Fire-and-forget — NO bloqueamos la respuesta HTTP con el email
-        emailService.sendWelcomeEmail({ name, email, verificationToken })
-            .then(result => {
-                if (result.success) {
-                    logger.info('✅ Email de bienvenida enviado', { email, messageId: result.messageId });
-                } else {
-                    logger.error('❌ FALLÓ envío de email', { email, reason: result.message });
-                }
-            })
-            .catch(error => {
-                logger.error('🔥 EXCEPCIÓN al enviar email', { email, error: error.message });
-            });
+        logger.info(`[AuthService] Enviando email de bienvenida a: ${email}`);
+        let emailSent = false;
+        try {
+            const result = await emailService.sendWelcomeEmail({ name, email, verificationToken });
+            emailSent = result.success;
+            if (result.success) {
+                logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
+            } else {
+                logger.error('Falló envío de email', { email, reason: result.message });
+            }
+        } catch (error) {
+            logger.error('Excepción al enviar email', { email, error: error.message });
+        }
 
-        // La respuesta al usuario se envía INMEDIATAMENTE después de crear la cuenta
-        return user;
+        return { user, emailSent };
     }
 
     // Verificar email
@@ -52,9 +50,7 @@ class AuthService {
         });
 
         if (!user) {
-            const error = new Error('Token de verificación inválido o expirado');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('Token de verificación inválido o expirado', 400);
         }
 
         user.isVerified = true;
@@ -64,28 +60,53 @@ class AuthService {
         return user;
     }
 
+    // Reenviar email de verificación
+    async resendVerification(email) {
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            throw new ErrorResponse('No se encontró una cuenta con ese email', 404);
+        }
+
+        if (user.isVerified) {
+            throw new ErrorResponse('Esta cuenta ya está verificada', 400);
+        }
+
+        // Generar nuevo token
+        const verificationToken = crypto.randomBytes(20).toString('hex');
+        user.verificationToken = verificationToken;
+        user.verificationTokenExpire = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await user.save();
+
+        const result = await emailService.sendWelcomeEmail({
+            name: user.name,
+            email: user.email,
+            verificationToken
+        });
+
+        if (!result.success) {
+            throw new ErrorResponse('No se pudo enviar el email de verificación. Intentá más tarde.', 503);
+        }
+
+        return { message: 'Email de verificación reenviado exitosamente' };
+    }
+
     // Iniciar sesión
     async login(email, password) {
         if (!email || !password) {
-            const error = new Error('Por favor ingrese email y contraseña');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('Por favor ingrese email y contraseña', 400);
         }
 
         const user = await User.findOne({ email }).select('+password');
 
         if (!user) {
-            const error = new Error('Credenciales inválidas');
-            error.statusCode = 401;
-            throw error;
+            throw new ErrorResponse('Credenciales inválidas', 401);
         }
 
         const isMatch = await user.matchPassword(password);
 
         if (!isMatch) {
-            const error = new Error('Credenciales inválidas');
-            error.statusCode = 401;
-            throw error;
+            throw new ErrorResponse('Credenciales inválidas', 401);
         }
 
         return user;

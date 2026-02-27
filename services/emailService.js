@@ -1,87 +1,56 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const logger = require('../utils/logger');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EmailService — envío de correos transaccionales via SMTP
+// EmailService — Envío de correos transaccionales via Resend
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Configuración de credenciales Resend:
+//
+// 1. Ir a https://resend.com y crear cuenta gratuita
+// 2. En el dashboard → "API Keys" → crear nueva API Key
+// 3. Copiar la key → RESEND_API_KEY en .env
+// 4. Para desarrollo: Resend permite enviar desde "onboarding@resend.dev" gratis
+// 5. Para producción: agregar tu dominio en "Domains", configurar registros DNS
+//    (MX, SPF, DKIM que Resend te provee)
+// 6. Una vez verificado → RESEND_FROM_EMAIL=noreply@tudominio.com
+//
+// Variables de entorno:
+//   RESEND_API_KEY=re_xxxxxxxxxxxx
+//   RESEND_FROM_EMAIL=onboarding@resend.dev  (o tu dominio verificado)
+//   CONTACT_ADMIN_EMAIL=admin@tudominio.com  (para recibir formularios de contacto)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EmailService {
   constructor() {
-    this._transporter = null;
-    this._initialized = false;
-    this._senderName = '4Fun Store';
-    this._senderEmail = null;
+    this._client = null;
+    this._fromEmail = null;
+    this._fromName = '4Fun Store';
   }
 
   /**
-   * Inicializa el transporter SMTP con las variables de entorno.
-   * Se llama de forma lazy en el primer envío.
+   * Inicializa el cliente Resend de forma lazy.
    */
-  _initialize() {
-    if (this._initialized) return;
-
-    const {
-      SMTP_HOST,
-      SMTP_PORT,
-      SMTP_USER,
-      SMTP_PASS,
-      SMTP_FROM_EMAIL,
-      SMTP_FROM_NAME
-    } = process.env;
-
-    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-      logger.warn('EmailService: Configuración SMTP incompleta. Variables faltantes:', {
-        SMTP_HOST: SMTP_HOST ? 'OK' : 'FALTA',
-        SMTP_USER: SMTP_USER ? 'OK' : 'FALTA',
-        SMTP_PASS: SMTP_PASS ? 'OK' : 'FALTA'
-      });
-      return;
+  _getClient() {
+    if (!this._client) {
+      const apiKey = process.env.RESEND_API_KEY;
+      if (!apiKey) {
+        logger.warn('EmailService: RESEND_API_KEY no configurada. Los emails no se enviarán.');
+        return null;
+      }
+      this._client = new Resend(apiKey);
+      this._fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+      logger.info('EmailService: Cliente Resend inicializado', { from: this._fromEmail });
     }
-
-    const port = parseInt(SMTP_PORT) || 587;
-    const secure = port === 465; // SSL solo en puerto 465; 587 usa STARTTLS
-
-    this._transporter = nodemailer.createTransport({
-      host: SMTP_HOST,
-      port,
-      secure,
-      auth: {
-        user: SMTP_USER,
-        pass: SMTP_PASS
-      },
-      tls: {
-        rejectUnauthorized: false // Permite certificados auto-firmados en desarrollo
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000
-    });
-
-    this._senderName = SMTP_FROM_NAME || '4Fun Store';
-    this._senderEmail = SMTP_FROM_EMAIL || SMTP_USER;
-    this._initialized = true;
-
-    logger.info('EmailService: Transporter SMTP inicializado', {
-      host: SMTP_HOST,
-      port,
-      user: SMTP_USER.slice(0, 3) + '***@' + (SMTP_USER.split('@')[1] || 'mail')
-    });
+    return this._client;
   }
 
-  /**
-   * Indica si el servicio está listo para enviar correos.
-   * @returns {boolean}
-   */
+  /** Indica si el servicio está listo para enviar correos. */
   isAvailable() {
-    if (!this._initialized) this._initialize();
-    return this._initialized && this._transporter !== null;
+    return this._getClient() !== null;
   }
 
-  /**
-   * Convierte HTML básico a texto plano (fallback para clientes de email sin HTML).
-   * @param {string} html
-   * @returns {string}
-   */
+  /** Convierte HTML a texto plano (fallback). */
   _htmlToText(html) {
     return html
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -91,45 +60,38 @@ class EmailService {
   }
 
   /**
-   * Método base para enviar correos electrónicos.
+   * Método base para enviar correos.
    * @param {Object} options
-   * @param {string} options.to       - Destinatario
-   * @param {string} options.subject  - Asunto del correo
-   * @param {string} options.html     - Cuerpo HTML
-   * @param {string} [options.text]   - Cuerpo texto plano (opcional, se genera del HTML)
+   * @param {string} options.to      - Destinatario
+   * @param {string} options.subject - Asunto
+   * @param {string} options.html    - Cuerpo HTML
    * @returns {Promise<{success: boolean, messageId?: string, message?: string}>}
    */
-  async sendEmail({ to, subject, html, text }) {
-    if (!this._initialized) this._initialize();
-
-    if (!this.isAvailable()) {
-      logger.warn('EmailService: Intento de envío sin configuración disponible', { to, subject });
+  async sendEmail({ to, subject, html }) {
+    const client = this._getClient();
+    if (!client) {
       return { success: false, message: 'Servicio de email no configurado' };
     }
 
     try {
-      const info = await this._transporter.sendMail({
-        from: `"${this._senderName}" <${this._senderEmail}>`,
-        to,
+      const { data, error } = await client.emails.send({
+        from: `${this._fromName} <${this._fromEmail}>`,
+        to: [to],
         subject,
         html,
-        text: text || this._htmlToText(html)
+        text: this._htmlToText(html)
       });
 
-      logger.info('EmailService: Correo enviado', {
-        to,
-        subject,
-        messageId: info.messageId
-      });
+      if (error) {
+        logger.error('EmailService: Error de Resend', { to, subject, error: error.message });
+        return { success: false, message: error.message };
+      }
 
-      return { success: true, messageId: info.messageId };
+      logger.info('EmailService: Correo enviado', { to, subject, id: data?.id });
+      return { success: true, messageId: data?.id };
 
     } catch (error) {
-      logger.error('EmailService: Error al enviar correo', {
-        to,
-        subject,
-        error: error.message
-      });
+      logger.error('EmailService: Excepción al enviar', { to, subject, error: error.message });
       return { success: false, message: error.message };
     }
   }
@@ -393,10 +355,10 @@ class EmailService {
    * @param {string} params.message  - Mensaje del remitente
    */
   async sendContactNotification({ fullName, email, message }) {
-    const adminEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
+    const adminEmail = process.env.CONTACT_ADMIN_EMAIL || process.env.RESEND_FROM_EMAIL;
 
     if (!adminEmail) {
-      logger.warn('EmailService: No hay email de administrador configurado para contacto (SMTP_FROM_EMAIL / SMTP_USER)');
+      logger.warn('EmailService: No hay email de administrador configurado (CONTACT_ADMIN_EMAIL)');
       return { success: false, message: 'Email de administrador no configurado' };
     }
 

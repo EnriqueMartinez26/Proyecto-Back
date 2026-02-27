@@ -1,8 +1,22 @@
 const AuthService = require('../services/authService');
 const UserService = require('../services/userService');
+const ErrorResponse = require('../utils/errorResponse');
+
+// Transforma un user document a la forma estándar de respuesta
+const toUserDTO = (user) => ({
+    id: user._id || user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    avatar: user.avatar || null,
+    phone: user.phone || null,
+    address: user.address || null,
+    isVerified: user.isVerified,
+    createdAt: user.createdAt
+});
 
 // Helper para gestionar la cookie y respuesta del token
-const sendTokenResponse = (user, statusCode, res) => {
+const sendTokenResponse = (user, statusCode, res, emailSent) => {
     const token = user.getSignedJwtToken();
 
     const options = {
@@ -12,21 +26,10 @@ const sendTokenResponse = (user, statusCode, res) => {
         sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax'
     };
 
-    res.status(statusCode)
-        .cookie('token', token, options)
-        .json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                avatar: user.avatar || null,
-                phone: user.phone || null,
-                address: user.address || null
-            }
-        });
+    const response = { success: true, token, user: toUserDTO(user) };
+    if (emailSent !== undefined) response.emailSent = emailSent;
+
+    res.status(statusCode).cookie('token', token, options).json(response);
 };
 
 // @desc    Registrar usuario
@@ -34,8 +37,8 @@ const sendTokenResponse = (user, statusCode, res) => {
 // @access  Public
 exports.register = async (req, res, next) => {
     try {
-        const user = await AuthService.register(req.body);
-        sendTokenResponse(user, 201, res);
+        const { user, emailSent } = await AuthService.register(req.body);
+        sendTokenResponse(user, 201, res, emailSent);
     } catch (error) {
         next(error);
     }
@@ -48,9 +51,7 @@ exports.verifyEmail = async (req, res, next) => {
     try {
         const { token } = req.query;
         if (!token) {
-            const error = new Error('Token no proporcionado');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('Token no proporcionado', 400);
         }
 
         await AuthService.verifyEmail(token);
@@ -83,20 +84,7 @@ exports.login = async (req, res, next) => {
 exports.getProfile = async (req, res, next) => {
     try {
         const user = await UserService.getUserById(req.user.id);
-        res.status(200).json({
-            success: true,
-            user: {
-                id: user._id || user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                avatar: user.avatar || null,
-                phone: user.phone || null,
-                address: user.address || null,
-                isVerified: user.isVerified,
-                createdAt: user.createdAt
-            }
-        });
+        res.status(200).json({ success: true, user: toUserDTO(user) });
     } catch (error) {
         next(error);
     }
@@ -117,20 +105,7 @@ exports.updateProfile = async (req, res, next) => {
 
         await user.save();
 
-        res.status(200).json({
-            success: true,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                avatar: user.avatar || null,
-                phone: user.phone || null,
-                address: user.address || null,
-                isVerified: user.isVerified,
-                createdAt: user.createdAt
-            }
-        });
+        res.status(200).json({ success: true, user: toUserDTO(user) });
     } catch (error) {
         next(error);
     }
@@ -144,15 +119,11 @@ exports.changePassword = async (req, res, next) => {
         const { currentPassword, newPassword } = req.body;
 
         if (!currentPassword || !newPassword) {
-            const error = new Error('Se requiere la contraseña actual y la nueva.');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('Se requiere la contraseña actual y la nueva.', 400);
         }
 
         if (newPassword.length < 6) {
-            const error = new Error('La nueva contraseña debe tener al menos 6 caracteres.');
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse('La nueva contraseña debe tener al menos 6 caracteres.', 400);
         }
 
         // Necesitamos el password para comparar
@@ -160,16 +131,12 @@ exports.changePassword = async (req, res, next) => {
         const user = await User.findById(req.user.id).select('+password');
 
         if (!user) {
-            const error = new Error('Usuario no encontrado');
-            error.statusCode = 404;
-            throw error;
+            throw new ErrorResponse('Usuario no encontrado', 404);
         }
 
         const isMatch = await user.matchPassword(currentPassword);
         if (!isMatch) {
-            const error = new Error('La contraseña actual es incorrecta.');
-            error.statusCode = 401;
-            throw error;
+            throw new ErrorResponse('La contraseña actual es incorrecta.', 401);
         }
 
         user.password = newPassword;
@@ -199,4 +166,20 @@ exports.logout = async (req, res, next) => {
         success: true,
         data: {}
     });
+};
+
+// @desc    Reenviar email de verificación
+// @route   POST /api/auth/resend-verification
+// @access  Public
+exports.resendVerification = async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            throw new ErrorResponse('Se requiere el email', 400);
+        }
+        const result = await AuthService.resendVerification(email);
+        res.status(200).json({ success: true, message: result.message });
+    } catch (error) {
+        next(error);
+    }
 };

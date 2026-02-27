@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 // Obtener todos los usuarios
@@ -12,9 +13,7 @@ exports.getAllUsers = async () => {
 exports.getUserById = async (id) => {
     const user = await User.findById(id).select('-password');
     if (!user) {
-        const error = new Error('Usuario no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Usuario no encontrado', 404);
     }
     return user;
 };
@@ -25,9 +24,7 @@ exports.updateUser = async (id, data) => {
 
     const user = await User.findById(id);
     if (!user) {
-        const error = new Error('Usuario no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Usuario no encontrado', 404);
     }
 
     user.name = name || user.name;
@@ -52,9 +49,7 @@ exports.updateUser = async (id, data) => {
 exports.deleteUser = async (id) => {
     const user = await User.findByIdAndDelete(id);
     if (!user) {
-        const error = new Error('Usuario no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Usuario no encontrado', 404);
     }
     logger.info(`Usuario eliminado: ${id}`);
     return true;

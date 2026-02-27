@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { PC_SPECS, TOP_DEVELOPERS } = require('../utils/constants');
+const { PC_SPECS } = require('../utils/constants');
 
 const productSchema = new mongoose.Schema({
   nombre: {

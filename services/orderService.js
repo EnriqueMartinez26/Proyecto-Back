@@ -1,128 +1,12 @@
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
-const crypto = require('crypto');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const DigitalKey = require('../models/DigitalKey');
 const User = require('../models/User');
+const mpService = require('./mercadoPagoService');
 const EmailService = require('./emailService');
+const { DEFAULT_IMAGE } = require('../utils/constants');
 const logger = require('../utils/logger');
 const ErrorResponse = require('../utils/errorResponse');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MercadoPagoService — encapsula toda la comunicación con la API de MP
-// ─────────────────────────────────────────────────────────────────────────────
-
-class MercadoPagoService {
-  constructor() {
-    this._client = null;
-  }
-
-  /**
-   * Devuelve el cliente MP configurado (singleton lazy).
-   */
-  getClient() {
-    if (!this._client) {
-      const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
-      if (!token) {
-        throw new Error('MERCADOPAGO_ACCESS_TOKEN no está configurado en las variables de entorno.');
-      }
-      this._client = new MercadoPagoConfig({
-        accessToken: token,
-        options: { timeout: 5000 }
-      });
-    }
-    return this._client;
-  }
-
-  /**
-   * Crea una preferencia de pago (Checkout Pro).
-   * @param {string} orderId - ID de la orden local
-   * @param {Array}  items   - Items validados para MP [{ title, quantity, unit_price, currency_id, ... }]
-   * @param {string} backendUrl  - URL pública del backend (ngrok en dev, dominio en prod)
-   * @returns {Object} Respuesta de MP con id, init_point, sandbox_init_point
-   */
-  async createPreference(orderId, items, backendUrl) {
-    const client = this.getClient();
-    const preferenceApi = new Preference(client);
-
-    const preferenceData = {
-      body: {
-        items,
-        back_urls: {
-          success: `${backendUrl}/api/orders/feedback?status=approved`,
-          failure: `${backendUrl}/api/orders/feedback?status=failure`,
-          pending: `${backendUrl}/api/orders/feedback?status=pending`
-        },
-        auto_return: 'approved',
-        external_reference: orderId,
-        statement_descriptor: '4FUN',
-        notification_url: `${backendUrl}/api/orders/webhook`,
-        expires: true,
-        expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-      }
-    };
-
-    const response = await preferenceApi.create(preferenceData);
-    return response;
-  }
-
-  /**
-   * Obtiene los datos de un pago por su ID.
-   * @param {string} paymentId
-   * @returns {Object} Datos del pago de MP
-   */
-  async getPayment(paymentId) {
-    const client = this.getClient();
-    const paymentApi = new Payment(client);
-    const paymentInfo = await paymentApi.get({ id: paymentId });
-    return paymentInfo;
-  }
-
-  /**
-   * Valida la firma HMAC-SHA256 del webhook de MP.
-   * Si NODE_ENV === 'production' lanza error en firma inválida.
-   * En development sólo emite un warning.
-   * @param {Object} headers - Cabeceras HTTP del webhook
-   * @param {string} dataId  - ID del dato del webhook (payment ID)
-   */
-  validateWebhookSignature(headers, dataId) {
-    const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
-    const xSignature = headers['x-signature'];
-
-    if (!secret || !xSignature) return; // Sin secreto configurado, se omite la validación
-
-    let ts, receivedHash;
-    xSignature.split(',').forEach(part => {
-      const [key, value] = part.trim().split('=');
-      if (key === 'ts') ts = value;
-      if (key === 'v1') receivedHash = value;
-    });
-
-    if (!ts || !receivedHash) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error('Firma de webhook malformada.');
-      }
-      logger.warn('Firma de webhook malformada (continuando en dev)');
-      return;
-    }
-
-    const requestId = headers['x-request-id'] || '';
-    const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
-    const expectedHash = crypto
-      .createHmac('sha256', secret)
-      .update(manifest)
-      .digest('hex');
-
-    if (receivedHash !== expectedHash) {
-      if (process.env.NODE_ENV === 'production') {
-        throw new Error('Firma de webhook inválida.');
-      }
-      logger.warn('Firma de webhook inválida (continuando en dev)');
-    }
-  }
-}
-
-const mpService = new MercadoPagoService();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OrderService — lógica de negocio de órdenes
@@ -221,13 +105,9 @@ class OrderService {
       order.externalId = mpResponse.id;
       await order.save();
 
-      const paymentLink = process.env.NODE_ENV === 'production'
-        ? mpResponse.init_point
-        : mpResponse.sandbox_init_point;
+      logger.info(`Orden ${order._id} creada. Link de pago generado (${mpService.env}).`);
 
-      logger.info(`Orden ${order._id} creada. Link de pago generado.`);
-
-      return { orderId: order._id, paymentLink, order };
+      return { orderId: order._id, paymentLink: mpResponse.paymentLink, order };
 
     } catch (mpError) {
       // Rollback: devolver stock y eliminar la orden
@@ -345,7 +225,6 @@ class OrderService {
    * Obtiene las órdenes de un usuario enriquecidas con claves digitales si están pagadas.
    */
   async getUserOrders(userId) {
-    const { DEFAULT_IMAGE } = require('../utils/constants');
     const orders = await Order.find({ user: userId }).sort({ createdAt: -1 }).lean();
 
     const enrichedOrders = await Promise.all(

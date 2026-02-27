@@ -1,6 +1,5 @@
 // Centralized Constants for Magic Strings
 exports.DEFAULT_IMAGE = 'https://placehold.co/600x400?text=No+Image';
-exports.UNKNOWN_PRODUCT = 'Unknown Product';
 
 exports.PC_SPECS = {
     LOW: {
@@ -26,15 +25,4 @@ exports.PC_SPECS = {
     }
 };
 
-exports.TOP_DEVELOPERS = [
-    'Nintendo',
-    'Sony Interactive Entertainment',
-    'Xbox Game Studios', // Microsoft
-    'Tencent Games',
-    'Ubisoft',
-    'Electronic Arts (EA)',
-    'Take-Two Interactive',
-    'Activision Blizzard',
-    'Capcom',
-    'Bandai Namco Entertainment'
-];
+

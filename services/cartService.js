@@ -1,6 +1,7 @@
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const ProductService = require('../services/productService');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 const PRODUCT_FIELDS = 'nombre precio imagenUrl stock plataformaId generoId tipo descripcion desarrollador fechaLanzamiento calificacion activo';
@@ -35,14 +36,10 @@ exports.addToCart = async (userId, productId, quantity) => {
     // Validar que el producto existe, está activo y tiene stock
     const product = await Product.findById(productId);
     if (!product) {
-        const error = new Error('Producto no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Producto no encontrado', 404);
     }
     if (!product.activo) {
-        const error = new Error('Este producto ya no está disponible');
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse('Este producto ya no está disponible', 400);
     }
 
     // Verificar stock considerando cantidad ya en carrito
@@ -57,9 +54,7 @@ exports.addToCart = async (userId, productId, quantity) => {
 
     const totalRequested = currentQuantityInCart + quantity;
     if (product.stock < totalRequested) {
-        const error = new Error(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQuantityInCart}`);
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQuantityInCart}`, 400);
     }
 
     if (!cart) {
@@ -86,16 +81,12 @@ exports.updateCartItem = async (userId, itemId, quantity) => {
     const cart = await Cart.findOne({ user: userId });
 
     if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Carrito no encontrado', 404);
     }
 
     const item = cart.items.id(itemId);
     if (!item) {
-        const error = new Error('Item no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Item no encontrado', 404);
     }
 
     item.quantity = quantity;
@@ -109,9 +100,7 @@ exports.removeFromCart = async (userId, itemId) => {
     const cart = await Cart.findOne({ user: userId });
 
     if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Carrito no encontrado', 404);
     }
 
     cart.items = cart.items.filter(item => item._id.toString() !== itemId);
@@ -124,9 +113,7 @@ exports.removeFromCart = async (userId, itemId) => {
 exports.clearCart = async (userId) => {
     const cart = await Cart.findOne({ user: userId });
     if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Carrito no encontrado', 404);
     }
 
     cart.items = [];

@@ -1,7 +1,8 @@
 const Product = require('../models/Product');
 const Platform = require('../models/Platform');
 const Genre = require('../models/Genre');
-const { DEFAULT_IMAGE, UNKNOWN_PRODUCT } = require('../utils/constants');
+const { DEFAULT_IMAGE } = require('../utils/constants');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
 // --- PRIVATE MAPPER (DTO TRANSFORMER) ---
@@ -183,9 +184,7 @@ exports.getProductById = async (id) => {
         .lean();
 
     if (!product) {
-        const error = new Error('Producto no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Producto no encontrado', 404);
     }
     return toResponseDTO(product);
 };
@@ -196,16 +195,12 @@ exports.createProduct = async (data) => {
     // VALIDACIÓN CRÍTICA: Verificar que Platform y Genre existan y estén activos
     const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
     if (!platform) {
-        const error = new Error(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`);
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`, 400);
     }
 
     const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
     if (!genre) {
-        const error = new Error(`Género '${modelData.generoId}' no encontrado o inactivo`);
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse(`Género '${modelData.generoId}' no encontrado o inactivo`, 400);
     }
 
     // Auto-rank: Insert at top (smallest order - 1000)
@@ -235,18 +230,14 @@ exports.updateProduct = async (id, data) => {
     if (modelData.plataformaId) {
         const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
         if (!platform) {
-            const error = new Error(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`);
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`, 400);
         }
     }
 
     if (modelData.generoId) {
         const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
         if (!genre) {
-            const error = new Error(`Género '${modelData.generoId}' no encontrado o inactivo`);
-            error.statusCode = 400;
-            throw error;
+            throw new ErrorResponse(`Género '${modelData.generoId}' no encontrado o inactivo`, 400);
         }
     }
 
@@ -254,9 +245,7 @@ exports.updateProduct = async (id, data) => {
     // para que el pre-save hook genere los requisitos a partir del specPreset
     const product = await Product.findById(id);
     if (!product) {
-        const error = new Error('Producto no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Producto no encontrado', 404);
     }
 
     Object.assign(product, modelData);
@@ -271,9 +260,7 @@ exports.updateProduct = async (id, data) => {
 exports.deleteProduct = async (id) => {
     const product = await Product.findByIdAndUpdate(id, { activo: false }, { new: true });
     if (!product) {
-        const error = new Error('Producto no encontrado');
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Producto no encontrado', 404);
     }
     return true;
 };
@@ -289,22 +276,16 @@ exports.deleteProducts = async (ids) => {
 exports.reorderProduct = async (id, newPosition) => {
     // newPosition es el índice visual (1-based)
     if (newPosition < 1) {
-        const error = new Error("Posición inválida");
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse('Posición inválida', 400);
     }
 
     const product = await Product.findById(id);
     if (!product) {
-        const error = new Error("Producto no encontrado");
-        error.statusCode = 404;
-        throw error;
+        throw new ErrorResponse('Producto no encontrado', 404);
     }
 
     if (!product.activo) {
-        const error = new Error("No se puede reordenar un producto inactivo");
-        error.statusCode = 400;
-        throw error;
+        throw new ErrorResponse('No se puede reordenar un producto inactivo', 400);
     }
 
     // Obtenemos SOLO productos ACTIVOS (excluyendo el que movemos para simplificar cálculo de huecos)

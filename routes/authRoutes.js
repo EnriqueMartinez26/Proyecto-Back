@@ -7,7 +7,8 @@ const {
     updateProfile,
     changePassword,
     logout,
-    verifyEmail // NUEVO
+    verifyEmail,
+    resendVerification
 } = require('../controllers/authController');
 const { protect } = require('../middlewares/auth');
 const { registerValidation, loginValidation } = require('../middlewares/authValidator');
@@ -16,6 +17,7 @@ const { registerValidation, loginValidation } = require('../middlewares/authVali
 router.get('/verify', verifyEmail);
 router.post('/register', registerValidation, register);
 router.post('/login', loginValidation, login);
+router.post('/resend-verification', resendVerification);
 
 // Rutas protegidas
 router.get('/profile', protect, getProfile);

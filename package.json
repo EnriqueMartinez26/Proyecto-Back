@@ -32,7 +32,7 @@
     "jsonwebtoken": "^9.0.2",
     "mercadopago": "^2.11.0",
     "mongoose": "^7.6.3",
-    "nodemailer": "^7.0.12",
+    "resend": "^6.9.2",
     "winston": "^3.18.3"
   },
   "devDependencies": {
