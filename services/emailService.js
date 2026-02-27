@@ -29,6 +29,19 @@ class EmailService {
   }
 
   /**
+   * Extrae solo la dirección de email si el valor incluye "Name <email>".
+   * Ej: "4Fun Store <noreply@x.com>" → "noreply@x.com"
+   */
+  _parseFromEmail(raw) {
+    const match = raw.match(/<([^>]+)>/);
+    if (match) {
+      logger.warn('EmailService: RESEND_FROM_EMAIL contenía display name — se extrajo solo el email. Usá solo la dirección en .env');
+      return match[1];
+    }
+    return raw.trim();
+  }
+
+  /**
    * Inicializa el cliente Resend de forma lazy.
    */
   _getClient() {
@@ -39,8 +52,9 @@ class EmailService {
         return null;
       }
       this._client = new Resend(apiKey);
-      this._fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-      logger.info('EmailService: Cliente Resend inicializado', { from: this._fromEmail });
+      const rawFrom = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+      this._fromEmail = this._parseFromEmail(rawFrom);
+      logger.info('EmailService: Cliente Resend inicializado', { from: `${this._fromName} <${this._fromEmail}>` });
     }
     return this._client;
   }
