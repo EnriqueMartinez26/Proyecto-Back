@@ -67,6 +67,37 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ─── Diagnóstico temporal SMTP (borrar después de validar) ───
+app.get('/debug/smtp', async (req, res) => {
+  const diag = {
+    SMTP_EMAIL: process.env.SMTP_EMAIL ? `✅ ${process.env.SMTP_EMAIL}` : '❌ NO DEFINIDA',
+    SMTP_PASSWORD: process.env.SMTP_PASSWORD ? `✅ (${process.env.SMTP_PASSWORD.length} chars)` : '❌ NO DEFINIDA',
+    FRONTEND_URL: process.env.FRONTEND_URL || '(default: http://localhost:3000)',
+    nodeVersion: process.version,
+  };
+
+  // Intentar crear transporter y verificar
+  try {
+    const emailService = require('./services/emailService');
+    diag.isAvailable = await emailService.isAvailable();
+
+    if (diag.isAvailable) {
+      // Intentar verify() explícito para diagnóstico
+      const transporter = await emailService._getTransporter();
+      try {
+        await transporter.verify();
+        diag.verify = '✅ OK';
+      } catch (verErr) {
+        diag.verify = `❌ ${verErr.message}`;
+      }
+    }
+  } catch (err) {
+    diag.error = err.message;
+  }
+
+  res.json(diag);
+});
+
 app.use((req, res, next) => {
   logger.warn(`Ruta no encontrada (404): ${req.method} ${req.originalUrl}`);
   const error = new Error(`Ruta no encontrada - ${req.originalUrl}`);
