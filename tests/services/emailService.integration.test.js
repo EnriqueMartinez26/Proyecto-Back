@@ -31,6 +31,14 @@ describe('EmailService — integración SMTP (Gmail port 465/SSL)', () => {
     emailService = require('../../services/emailService');
   });
 
+  afterAll(async () => {
+    // Cerrar el pool de conexiones SMTP para que Jest pueda salir limpiamente
+    if (emailService._transporter) {
+      emailService._transporter.close();
+      emailService._transporter = null;
+    }
+  });
+
   // ── 1. Disponibilidad del transporter ──────────────────────────────────────
   test('isAvailable() devuelve true cuando las credenciales están configuradas', async () => {
     const available = await emailService.isAvailable();
@@ -57,19 +65,22 @@ describe('EmailService — integración SMTP (Gmail port 465/SSL)', () => {
     console.log(`✅  Email enviado. MessageId: ${result.messageId}`);
   });
 
-  // ── 3. sendEmail() con destinatario inválido ───────────────────────────────
-  test('sendEmail() retorna success:false ante un error permanente (no lanza excepción)', async () => {
-    // Dirección deliberadamente inválida → Gmail devuelve 550 (permanente, sin retry)
+  // ── 3. sendEmail() con dirección malformada (rechazo local inmediato) ──────────────
+  test('sendEmail() retorna success:false ante una dirección malformada (sin lanzar)', async () => {
+    // Nota: Gmail acepta optímistamente dominios externos desconocidos en SMTP y
+    // luego rebota por NDR — no rechaza en tiempo real.
+    // Para probar el manejo de error local usamos una dirección sin "@",
+    // que nodemailer rechaza antes de intentar la conexión.
     const result = await emailService.sendEmail({
-      to: 'direccion-que-no-existe-99999@dominionoexiste.invalid',
-      subject: 'Test de error permanente',
+      to: 'direccion-sin-arroba-invalida',
+      subject: 'Test de dirección malformada',
       html: '<p>Test</p>'
     });
 
     // El servicio NO debe lanzar, solo devolver success:false
     expect(result.success).toBe(false);
     expect(result.message).toBeDefined();
-    console.log(`✅  Error manejado correctamente: "${result.message}"`);
+    console.log(`✅  Error local manejado correctamente: "${result.message}"`);
   });
 
   // ── 4. Control: no tiene credenciales → isAvailable() false ───────────────
