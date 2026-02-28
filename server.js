@@ -32,10 +32,10 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 app.use((req, res, next) => {
-  logger.info(`HTTP Request: ${req.method} ${req.url}`, {
-    ip: req.ip,
-    userAgent: req.get('User-Agent')
-  });
+  // Skip logging health checks and static assets to reduce log noise
+  if (req.url !== '/health') {
+    logger.info(`${req.method} ${req.url}`, { ip: req.ip });
+  }
   next();
 });
 
@@ -78,8 +78,17 @@ app.use((req, res, next) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  logger.info(`���️  Seguridad Activada (Helmet + RateLimit)`);
+const server = app.listen(PORT, () => {
+  logger.info(`🛡️  Seguridad Activada (Helmet + RateLimit)`);
   logger.info(`✅ Servidor corriendo en puerto ${PORT}`);
-  logger.info(`��� Modo: ${process.env.NODE_ENV}`);
+  logger.info(`🌍 Modo: ${process.env.NODE_ENV}`);
+});
+
+// Graceful shutdown (Render envía SIGTERM al redeploy)
+process.on('SIGTERM', () => {
+  logger.info('🛑 SIGTERM recibido. Cerrando servidor...');
+  server.close(() => {
+    logger.info('✅ Servidor cerrado limpiamente.');
+    process.exit(0);
+  });
 });

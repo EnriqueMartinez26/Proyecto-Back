@@ -19,6 +19,11 @@ const logger = require('../utils/logger');
 //   CONTACT_ADMIN_EMAIL=tu-gmail@gmail.com  (para recibir formularios de contacto)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Número máximo de reintentos al enviar un email. */
+const MAX_RETRIES = 3;
+/** Base de milisegundos para la espera exponencial entre reintentos. */
+const RETRY_BASE_MS = 1000;
+
 class EmailService {
   constructor() {
     this._transporter = null;
@@ -28,6 +33,7 @@ class EmailService {
 
   /**
    * Inicializa el transporter de Nodemailer de forma lazy.
+   * Usa pool de conexiones para reutilizar sockets SMTP.
    */
   _getTransporter() {
     if (!this._transporter) {
@@ -41,6 +47,9 @@ class EmailService {
 
       this._transporter = nodemailer.createTransport({
         service: 'gmail',
+        pool: true,           // Reutiliza conexiones TCP (evita handshake TLS por cada email)
+        maxConnections: 3,    // Gmail permite ~3 conexiones simultáneas por cuenta
+        maxMessages: 100,     // Mensajes por conexión antes de reconectar
         auth: {
           user: email,
           pass: password
@@ -48,7 +57,9 @@ class EmailService {
       });
 
       this._fromEmail = email;
-      logger.info('EmailService: Transporter Gmail inicializado', { from: `${this._fromName} <${this._fromEmail}>` });
+      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3)', {
+        from: `${this._fromName} <${this._fromEmail}>`
+      });
     }
     return this._transporter;
   }
@@ -68,7 +79,16 @@ class EmailService {
   }
 
   /**
-   * Método base para enviar correos.
+   * Espera un tiempo exponencial antes de reintentar.
+   * @param {number} attempt - Número de intento (0-indexed)
+   */
+  _delay(attempt) {
+    const ms = RETRY_BASE_MS * Math.pow(2, attempt);
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Método base para enviar correos con reintentos automáticos.
    * @param {Object} options
    * @param {string} options.to      - Destinatario
    * @param {string} options.subject - Asunto
@@ -81,22 +101,39 @@ class EmailService {
       return { success: false, message: 'Servicio de email no configurado' };
     }
 
-    try {
-      const info = await transporter.sendMail({
-        from: `${this._fromName} <${this._fromEmail}>`,
-        to,
-        subject,
-        html,
-        text: this._htmlToText(html)
-      });
+    const mailOptions = {
+      from: `${this._fromName} <${this._fromEmail}>`,
+      to,
+      subject,
+      html,
+      text: this._htmlToText(html)
+    };
 
-      logger.info('EmailService: Correo enviado', { to, subject, messageId: info.messageId });
-      return { success: true, messageId: info.messageId };
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const info = await transporter.sendMail(mailOptions);
+        logger.info('EmailService: Correo enviado', { to, subject, messageId: info.messageId, attempt });
+        return { success: true, messageId: info.messageId };
 
-    } catch (error) {
-      logger.error('EmailService: Error al enviar', { to, subject, error: error.message });
-      return { success: false, message: error.message };
+      } catch (error) {
+        const isRetryable = error.responseCode >= 400 || error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT';
+        const isLastAttempt = attempt === MAX_RETRIES;
+
+        if (isLastAttempt || !isRetryable) {
+          logger.error('EmailService: Error definitivo al enviar', {
+            to, subject, error: error.message, attempt, code: error.code
+          });
+          return { success: false, message: error.message };
+        }
+
+        logger.warn(`EmailService: Reintentando (${attempt + 1}/${MAX_RETRIES})...`, {
+          to, error: error.message
+        });
+        await this._delay(attempt);
+      }
     }
+
+    return { success: false, message: 'Máximo de reintentos alcanzado' };
   }
 
   /**

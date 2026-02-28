@@ -14,11 +14,24 @@ const validateEnv = () => {
     logger.warn('⚠️  JWT_SECRET es muy corta. Debería tener al menos 32 caracteres.');
   }
 
+  // Validar JWT_EXPIRE
+  if (!process.env.JWT_EXPIRE) {
+    logger.warn('⚠️  JWT_EXPIRE no definido. Usando valor por defecto: 7d');
+  }
+
   // Variables opcionales — la app arranca pero algunas funciones no estarán disponibles
   const optionalVars = ['BACKEND_URL', 'SMTP_EMAIL', 'SMTP_PASSWORD'];
   const missingOptional = optionalVars.filter((v) => !process.env[v]);
   if (missingOptional.length > 0) {
     logger.warn(`⚠️  Variables opcionales no configuradas: ${missingOptional.join(', ')} — algunas funciones (pagos, email) pueden no funcionar.`);
+  }
+
+  // Validar config de Email SMTP
+  if (process.env.SMTP_EMAIL && !process.env.SMTP_PASSWORD) {
+    logger.warn('⚠️  SMTP_EMAIL está definido pero SMTP_PASSWORD no. Los emails no se enviarán.');
+  }
+  if (process.env.SMTP_PASSWORD && process.env.SMTP_PASSWORD.length < 10) {
+    logger.warn('⚠️  SMTP_PASSWORD parece demasiado corta. Las App Passwords de Gmail tienen 16 caracteres.');
   }
 
   // Validar config de MercadoPago según entorno

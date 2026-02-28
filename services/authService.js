@@ -55,6 +55,7 @@ class AuthService {
 
         user.isVerified = true;
         user.verificationToken = undefined;
+        user.verificationTokenExpire = undefined;
         await user.save();
 
         return user;
