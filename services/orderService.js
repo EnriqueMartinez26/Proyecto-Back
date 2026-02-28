@@ -112,7 +112,8 @@ class OrderService {
       const mpResponse = await mpService.createPreference(
         order._id.toString(),
         validatedItems,
-        backendUrl
+        backendUrl,
+        user
       );
 
       order.externalId = mpResponse.id;

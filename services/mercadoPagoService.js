@@ -82,13 +82,17 @@ class MercadoPagoService {
    * @param {string} backendUrl - URL pública del backend (ngrok en dev, dominio en prod)
    * @returns {{ id: string, paymentLink: string }} Preference ID y link de pago
    */
-  async createPreference(orderId, items, backendUrl) {
+  async createPreference(orderId, items, backendUrl, user) {
     const client = this.getClient();
     const preferenceApi = new Preference(client);
 
     const response = await preferenceApi.create({
       body: {
         items,
+        payer: {
+          name: user?.name || 'Invitado',
+          email: user?.email || 'test_user_guest@testuser.com' // Previene bloqueos por falta de email en Guest Checkout de MP
+        },
         back_urls: {
           success: `${backendUrl}/api/orders/feedback?status=approved`,
           failure: `${backendUrl}/api/orders/feedback?status=failure`,
