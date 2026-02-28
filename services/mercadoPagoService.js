@@ -107,9 +107,10 @@ class MercadoPagoService {
       }
     });
 
-    // MercadoPago deprecó el uso de sandbox_init_point para las cuentas de prueba con tokens APP_USR.
-    // Ahora SIEMPRE se debe usar init_point. MP detecta que es un test basándose en el token de cuenta de prueba.
-    const paymentLink = response.init_point;
+    // Seleccionar el link según el entorno.
+    // Usamos sandbox_init_point en modo test para que el motor antifraude no bloquee
+    // las tarjetas de prueba de MP (Guest checkout sin login).
+    const paymentLink = this.isSandbox ? response.sandbox_init_point : response.init_point;
 
     return { id: response.id, paymentLink };
   }
