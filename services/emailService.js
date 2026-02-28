@@ -69,8 +69,8 @@ class EmailService {
 
       this._transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: 587,                // Puerto SUBMISSION con STARTTLS (465 bloqueado en Render free tier)
-        secure: false,            // false = STARTTLS (negocia TLS después del EHLO)
+        port: 465,                // Puerto SMTPS (SSL directo) — probado en smtp_trace.txt
+        secure: true,             // true = SSL/TLS desde el inicio (no STARTTLS)
         pool: true,
         maxConnections: 3,
         maxMessages: 100,
@@ -87,7 +87,7 @@ class EmailService {
       });
 
       this._fromEmail = email;
-      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3)', {
+      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: 465/SSL)', {
         from: `${this._fromName} <${this._fromEmail}>`,
         host: smtpHost
       });
@@ -147,7 +147,14 @@ class EmailService {
         return { success: true, messageId: info.messageId };
 
       } catch (error) {
-        const isRetryable = error.responseCode >= 400 || error.code === 'ECONNECTION' || error.code === 'ETIMEDOUT';
+        // Solo reintentar en errores TRANSITORIOS:
+        //   - Códigos SMTP 4xx (demoras temporales del servidor remoto)
+        //   - Errores de red/conexión recuperables
+        // NO reintentar en 5xx permanentes (500 auth fail, 550 user unknown, etc.)
+        const transientSmtpCodes = [421, 450, 451, 452];
+        const isRetryable =
+          transientSmtpCodes.includes(error.responseCode) ||
+          ['ECONNECTION', 'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND'].includes(error.code);
         const isLastAttempt = attempt === MAX_RETRIES;
 
         if (isLastAttempt || !isRetryable) {

@@ -27,19 +27,27 @@ class AuthService {
 
         // Fire-and-forget: no bloquear la respuesta HTTP esperando al SMTP.
         // El email se envía en background; si falla, se loguea pero el registro no se traba.
-        emailService.sendWelcomeEmail({ name, email, verificationToken })
+        // emailSent refleja el resultado real una vez que la promesa resuelve en el mismo tick.
+        let emailSent = false;
+        const emailPromise = emailService.sendWelcomeEmail({ name, email, verificationToken })
             .then(result => {
+                emailSent = result.success;
                 if (result.success) {
                     logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
                 } else {
-                    logger.error('Falló envío de email de bienvenida', { email, reason: result.message });
+                    logger.warn('Falló envío de email de bienvenida (reenvío disponible vía /resend-verification)', { email, reason: result.message });
                 }
             })
             .catch(error => {
+                emailSent = false;
                 logger.error('Excepción al enviar email de bienvenida', { email, error: error.message });
             });
 
-        return { user, emailSent: true };
+        // Esperar con un timeout corto (2 s) para obtener el resultado real sin bloquear demasiado.
+        // Si el SMTP tarda más, el registro igual responde 201 y emailSent queda false (honesto).
+        await Promise.race([emailPromise, new Promise(r => setTimeout(r, 2000))]);
+
+        return { user, emailSent };
     }
 
     // Verificar email
