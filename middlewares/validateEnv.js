@@ -39,6 +39,9 @@ const validateEnv = () => {
   if (mpEnv === 'production' && !process.env.MERCADOPAGO_ACCESS_TOKEN) {
     logger.warn('⚠️  MERCADOPAGO_ACCESS_TOKEN no configurado en modo production. Los pagos no funcionarán.');
   }
+  if (mpEnv === 'production' && !process.env.MERCADOPAGO_WEBHOOK_SECRET) {
+    logger.warn('⚠️  MERCADOPAGO_WEBHOOK_SECRET no configurado en producción. Validación de firmas de webhooks desactivada (riesgo de seguridad).');
+  }
   if (mpEnv === 'sandbox' && !process.env.MERCADOPAGO_SANDBOX_TOKEN) {
     logger.warn('⚠️  MERCADOPAGO_SANDBOX_TOKEN no configurado. MercadoPago sandbox no funcionará.');
   }

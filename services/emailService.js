@@ -50,6 +50,8 @@ class EmailService {
         pool: true,           // Reutiliza conexiones TCP (evita handshake TLS por cada email)
         maxConnections: 3,    // Gmail permite ~3 conexiones simultáneas por cuenta
         maxMessages: 100,     // Mensajes por conexión antes de reconectar
+        socketTimeout: 5000,  // 5 seg de timeout en socket inactivo para evitar zombie sockets
+        connectionTimeout: 5000, // 5 seg max para resolver conexión inicial
         auth: {
           user: email,
           pass: password
