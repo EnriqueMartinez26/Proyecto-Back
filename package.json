@@ -33,7 +33,6 @@
     "mercadopago": "^2.11.0",
     "mongoose": "^7.6.3",
     "nodemailer": "^8.0.1",
-    "resend": "^6.9.2",
     "winston": "^3.18.3"
   },
   "devDependencies": {

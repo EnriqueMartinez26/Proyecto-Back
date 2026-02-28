@@ -1,5 +1,5 @@
 // Centralized Constants for Magic Strings
-exports.DEFAULT_IMAGE = 'https://placehold.co/600x400?text=No+Image';
+exports.DEFAULT_IMAGE = 'https://placehold.co/600x400/png?text=4Fun';
 
 exports.PC_SPECS = {
     LOW: {
