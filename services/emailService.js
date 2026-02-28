@@ -1,5 +1,10 @@
 const nodemailer = require('nodemailer');
+const dns = require('dns');
+const { promisify } = require('util');
 const logger = require('../utils/logger');
+
+// Promisificar dns.lookup para poder usar async/await
+const dnsLookup = promisify(dns.lookup);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EmailService — Envío de correos transaccionales via Gmail SMTP (Nodemailer)
@@ -33,9 +38,10 @@ class EmailService {
 
   /**
    * Inicializa el transporter de Nodemailer de forma lazy.
+   * Resuelve smtp.gmail.com a IPv4 para evitar ENETUNREACH en Render (no soporta IPv6).
    * Usa pool de conexiones para reutilizar sockets SMTP.
    */
-  _getTransporter() {
+  async _getTransporter() {
     if (!this._transporter) {
       const email = process.env.SMTP_EMAIL;
       const password = process.env.SMTP_PASSWORD;
@@ -45,19 +51,34 @@ class EmailService {
         return null;
       }
 
+      // ─── CRÍTICO: Resolver smtp.gmail.com forzando IPv4 ───
+      // Render free tier NO soporta conexiones IPv6 salientes.
+      // Node.js v17+ cambió el orden de resolución DNS para respetar el del OS,
+      // lo que puede devolver una dirección IPv6 (2607:f8b0:...) → ENETUNREACH.
+      // Solución: resolver manualmente a IPv4 y usar la IP directa como host.
+      let smtpHost = 'smtp.gmail.com';
+      try {
+        const { address } = await dnsLookup('smtp.gmail.com', { family: 4 });
+        smtpHost = address;
+        logger.info(`EmailService: DNS resuelto smtp.gmail.com → ${address} (IPv4)`);
+      } catch (dnsErr) {
+        logger.warn('EmailService: No se pudo resolver IPv4, usando hostname directo', {
+          error: dnsErr.message
+        });
+      }
+
       this._transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',   // Especificamos host en lugar de 'service' para poder controlar family
-        port: 465,                // Puerto SMTPS (SSL implícito)
-        secure: true,             // SSL/TLS desde el inicio
-        pool: true,               // Reutiliza conexiones TCP (evita handshake TLS por cada email)
-        maxConnections: 3,        // Gmail permite ~3 conexiones simultáneas por cuenta
-        maxMessages: 100,         // Mensajes por conexión antes de reconectar
-        socketTimeout: 10000,     // 10 seg de timeout (Render cold-start puede ser lento)
-        connectionTimeout: 10000, // 10 seg max para resolver conexión inicial
+        host: smtpHost,
+        port: 465,
+        secure: true,
+        pool: true,
+        maxConnections: 3,
+        maxMessages: 100,
+        socketTimeout: 10000,
+        connectionTimeout: 10000,
         tls: {
-          // CRÍTICO: Render free tier NO soporta IPv6 saliente.
-          // Sin esto, Node resuelve smtp.gmail.com a IPv6 (2607:f8b0:...) → ENETUNREACH.
-          family: 4
+          // servername necesario cuando host es una IP para validar el certificado TLS
+          servername: 'smtp.gmail.com'
         },
         auth: {
           user: email,
@@ -67,15 +88,16 @@ class EmailService {
 
       this._fromEmail = email;
       logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3)', {
-        from: `${this._fromName} <${this._fromEmail}>`
+        from: `${this._fromName} <${this._fromEmail}>`,
+        host: smtpHost
       });
     }
     return this._transporter;
   }
 
   /** Indica si el servicio está listo para enviar correos. */
-  isAvailable() {
-    return this._getTransporter() !== null;
+  async isAvailable() {
+    return (await this._getTransporter()) !== null;
   }
 
   /** Convierte HTML a texto plano (fallback). */
@@ -105,7 +127,7 @@ class EmailService {
    * @returns {Promise<{success: boolean, messageId?: string, message?: string}>}
    */
   async sendEmail({ to, subject, html }) {
-    const transporter = this._getTransporter();
+    const transporter = await this._getTransporter();
     if (!transporter) {
       return { success: false, message: 'Servicio de email no configurado' };
     }
