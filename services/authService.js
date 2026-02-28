@@ -43,9 +43,10 @@ class AuthService {
                 logger.error('Excepción al enviar email de bienvenida', { email, error: error.message });
             });
 
-        // Esperar con un timeout corto (2 s) para obtener el resultado real sin bloquear demasiado.
+        // Esperar hasta 4 s para obtener el resultado real sin bloquear demasiado.
+        // 4 s cubre el cold start del pool SMTP (DNS + handshake TLS ~2-3 s en Render).
         // Si el SMTP tarda más, el registro igual responde 201 y emailSent queda false (honesto).
-        await Promise.race([emailPromise, new Promise(r => setTimeout(r, 2000))]);
+        await Promise.race([emailPromise, new Promise(r => setTimeout(r, 4000))]);
 
         return { user, emailSent };
     }
