@@ -1,67 +1,61 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 const logger = require('../utils/logger');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EmailService — Envío de correos transaccionales via Resend
+// EmailService — Envío de correos transaccionales via Gmail SMTP (Nodemailer)
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Configuración de credenciales Resend:
+// Configuración de credenciales Gmail:
 //
-// 1. Ir a https://resend.com y crear cuenta gratuita
-// 2. En el dashboard → "API Keys" → crear nueva API Key
-// 3. Copiar la key → RESEND_API_KEY en .env
-// 4. Para desarrollo: Resend permite enviar desde "onboarding@resend.dev" gratis
-// 5. Para producción: agregar tu dominio en "Domains", configurar registros DNS
-//    (MX, SPF, DKIM que Resend te provee)
-// 6. Una vez verificado → RESEND_FROM_EMAIL=noreply@tudominio.com
+// 1. Tener una cuenta de Google con verificación en 2 pasos activa
+// 2. Ir a https://myaccount.google.com/apppasswords
+// 3. Generar una "Contraseña de aplicación" para "Correo"
+// 4. Copiar la contraseña de 16 caracteres → SMTP_PASSWORD en .env
+// 5. Configurar SMTP_EMAIL con tu dirección de Gmail
 //
 // Variables de entorno:
-//   RESEND_API_KEY=re_xxxxxxxxxxxx
-//   RESEND_FROM_EMAIL=onboarding@resend.dev  (o tu dominio verificado)
-//   CONTACT_ADMIN_EMAIL=admin@tudominio.com  (para recibir formularios de contacto)
+//   SMTP_EMAIL=tu-gmail@gmail.com
+//   SMTP_PASSWORD=xxxx xxxx xxxx xxxx   (contraseña de aplicación)
+//   CONTACT_ADMIN_EMAIL=tu-gmail@gmail.com  (para recibir formularios de contacto)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class EmailService {
   constructor() {
-    this._client = null;
+    this._transporter = null;
     this._fromEmail = null;
     this._fromName = '4Fun Store';
   }
 
   /**
-   * Extrae solo la dirección de email si el valor incluye "Name <email>".
-   * Ej: "4Fun Store <noreply@x.com>" → "noreply@x.com"
+   * Inicializa el transporter de Nodemailer de forma lazy.
    */
-  _parseFromEmail(raw) {
-    const match = raw.match(/<([^>]+)>/);
-    if (match) {
-      logger.warn('EmailService: RESEND_FROM_EMAIL contenía display name — se extrajo solo el email. Usá solo la dirección en .env');
-      return match[1];
-    }
-    return raw.trim();
-  }
+  _getTransporter() {
+    if (!this._transporter) {
+      const email = process.env.SMTP_EMAIL;
+      const password = process.env.SMTP_PASSWORD;
 
-  /**
-   * Inicializa el cliente Resend de forma lazy.
-   */
-  _getClient() {
-    if (!this._client) {
-      const apiKey = process.env.RESEND_API_KEY;
-      if (!apiKey) {
-        logger.warn('EmailService: RESEND_API_KEY no configurada. Los emails no se enviarán.');
+      if (!email || !password) {
+        logger.warn('EmailService: SMTP_EMAIL o SMTP_PASSWORD no configuradas. Los emails no se enviarán.');
         return null;
       }
-      this._client = new Resend(apiKey);
-      const rawFrom = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-      this._fromEmail = this._parseFromEmail(rawFrom);
-      logger.info('EmailService: Cliente Resend inicializado', { from: `${this._fromName} <${this._fromEmail}>` });
+
+      this._transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: email,
+          pass: password
+        }
+      });
+
+      this._fromEmail = email;
+      logger.info('EmailService: Transporter Gmail inicializado', { from: `${this._fromName} <${this._fromEmail}>` });
     }
-    return this._client;
+    return this._transporter;
   }
 
   /** Indica si el servicio está listo para enviar correos. */
   isAvailable() {
-    return this._getClient() !== null;
+    return this._getTransporter() !== null;
   }
 
   /** Convierte HTML a texto plano (fallback). */
@@ -82,30 +76,25 @@ class EmailService {
    * @returns {Promise<{success: boolean, messageId?: string, message?: string}>}
    */
   async sendEmail({ to, subject, html }) {
-    const client = this._getClient();
-    if (!client) {
+    const transporter = this._getTransporter();
+    if (!transporter) {
       return { success: false, message: 'Servicio de email no configurado' };
     }
 
     try {
-      const { data, error } = await client.emails.send({
+      const info = await transporter.sendMail({
         from: `${this._fromName} <${this._fromEmail}>`,
-        to: [to],
+        to,
         subject,
         html,
         text: this._htmlToText(html)
       });
 
-      if (error) {
-        logger.error('EmailService: Error de Resend', { to, subject, error: error.message });
-        return { success: false, message: error.message };
-      }
-
-      logger.info('EmailService: Correo enviado', { to, subject, id: data?.id });
-      return { success: true, messageId: data?.id };
+      logger.info('EmailService: Correo enviado', { to, subject, messageId: info.messageId });
+      return { success: true, messageId: info.messageId };
 
     } catch (error) {
-      logger.error('EmailService: Excepción al enviar', { to, subject, error: error.message });
+      logger.error('EmailService: Error al enviar', { to, subject, error: error.message });
       return { success: false, message: error.message };
     }
   }
@@ -369,7 +358,7 @@ class EmailService {
    * @param {string} params.message  - Mensaje del remitente
    */
   async sendContactNotification({ fullName, email, message }) {
-    const adminEmail = process.env.CONTACT_ADMIN_EMAIL || process.env.RESEND_FROM_EMAIL;
+    const adminEmail = process.env.CONTACT_ADMIN_EMAIL || process.env.SMTP_EMAIL;
 
     if (!adminEmail) {
       logger.warn('EmailService: No hay email de administrador configurado (CONTACT_ADMIN_EMAIL)');

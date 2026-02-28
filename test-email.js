@@ -1,77 +1,74 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// test-email.js — Script de prueba para verificar la configuración de Resend
-// Ejecutar con:  node test-email.js tu-email@gmail.com
+// test-email.js — Script de prueba para verificar Gmail SMTP con Nodemailer
+// Ejecutar con:  node test-email.js tu-email-destino@gmail.com
 // ─────────────────────────────────────────────────────────────────────────────
 require('dotenv').config();
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
 const TARGET = process.argv[2];
 
 if (!TARGET) {
-    console.error('❌ Uso: node test-email.js <tu-email-destino@gmail.com>');
+    console.error('❌ Uso: node test-email.js <email-destino>');
+    console.error('   Ejemplo: node test-email.js kuki.martinez04@hotmail.com');
     process.exit(1);
 }
 
 async function testEmail() {
-    console.log('─── Diagnóstico de Email ───\n');
+    console.log('─── Diagnóstico de Email (Gmail SMTP) ───\n');
 
-    // 1. Verificar variables de entorno
-    const apiKey = process.env.RESEND_API_KEY;
-    const fromRaw = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const email = process.env.SMTP_EMAIL;
+    const password = process.env.SMTP_PASSWORD;
 
-    console.log(`🔑 RESEND_API_KEY:      ${apiKey ? '✅ Configurada (' + apiKey.slice(0, 8) + '...)' : '❌ FALTA — setear en .env'}`);
-    console.log(`📧 RESEND_FROM_EMAIL:   ${fromRaw}`);
+    console.log(`📧 SMTP_EMAIL:          ${email ? '✅ ' + email : '❌ FALTA'}`);
+    console.log(`🔑 SMTP_PASSWORD:       ${password ? '✅ Configurada (****' + password.slice(-4) + ')' : '❌ FALTA'}`);
     console.log(`📬 CONTACT_ADMIN_EMAIL: ${process.env.CONTACT_ADMIN_EMAIL || '⚠️  No configurado'}`);
     console.log(`🎯 Enviar a:            ${TARGET}\n`);
 
-    if (!apiKey) {
-        console.error('💥 No se puede continuar sin RESEND_API_KEY. Configurala en tu archivo .env');
+    if (!email || !password) {
+        console.error('💥 Faltan SMTP_EMAIL y/o SMTP_PASSWORD en tu .env');
         process.exit(1);
     }
 
-    // 2. Parsear el from (misma lógica defensiva del emailService)
-    const match = fromRaw.match(/<([^>]+)>/);
-    const fromEmail = match ? match[1] : fromRaw.trim();
-    if (match) {
-        console.log(`⚠️  RESEND_FROM_EMAIL contenía display name — se extrajo: ${fromEmail}`);
-        console.log(`   Corregí tu .env para usar solo el email.\n`);
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: email, pass: password }
+    });
+
+    // Verificar conexión
+    console.log('🔌 Verificando conexión SMTP...');
+    try {
+        await transporter.verify();
+        console.log('✅ Conexión SMTP exitosa!\n');
+    } catch (err) {
+        console.error('❌ Falló la conexión SMTP:', err.message);
+        console.log('\n🔍 Posibles causas:');
+        console.log('   • Contraseña de aplicación incorrecta');
+        console.log('   • Verificación en 2 pasos no activada en Google');
+        console.log('   • Firewall bloqueando conexión a smtp.gmail.com:465');
+        process.exit(1);
     }
 
-    // 3. Intentar enviar
-    const resend = new Resend(apiKey);
+    // Enviar email de prueba
     console.log('📤 Enviando email de prueba...\n');
-
     try {
-        const { data, error } = await resend.emails.send({
-            from: `4Fun Store <${fromEmail}>`,
-            to: [TARGET],
+        const info = await transporter.sendMail({
+            from: `4Fun Store <${email}>`,
+            to: TARGET,
             subject: '🧪 Test de Email — 4Fun Store',
             html: `
-        <div style="font-family:sans-serif;padding:20px;background:#0f0f23;color:#fff;border-radius:12px;">
+        <div style="font-family:sans-serif;padding:30px;background:#0f0f23;color:#fff;border-radius:12px;">
           <h1 style="color:#667eea;">¡Funciona! 🎉</h1>
-          <p>El servicio de email de <strong>4Fun Store</strong> está configurado correctamente.</p>
+          <p>El servicio de email de <strong>4Fun Store</strong> está configurado correctamente con Gmail SMTP.</p>
           <p style="color:#888;font-size:13px;">Enviado el: ${new Date().toLocaleString('es-AR')}</p>
         </div>
       `
         });
 
-        if (error) {
-            console.error('❌ Error de Resend:', JSON.stringify(error, null, 2));
-            console.log('\n🔍 Posibles causas:');
-            console.log('   • API Key inválida o expirada');
-            console.log('   • Email "from" no autorizado (verificar dominio en Resend)');
-            console.log('   • Cuenta de Resend suspendida');
-        } else {
-            console.log(`✅ ¡Email enviado exitosamente!`);
-            console.log(`   ID: ${data.id}`);
-            console.log(`   Revisá la bandeja de entrada (y spam) de: ${TARGET}`);
-        }
+        console.log('✅ ¡Email enviado exitosamente!');
+        console.log(`   Message ID: ${info.messageId}`);
+        console.log(`   Revisá la bandeja de entrada (y spam) de: ${TARGET}`);
     } catch (err) {
-        console.error('💥 Excepción:', err.message);
-        console.log('\n🔍 Verificá:');
-        console.log('   • Conexión a internet');
-        console.log('   • Que la API Key sea válida');
-        console.log('   • Firewall / proxy bloqueando conexiones salientes');
+        console.error('❌ Error al enviar:', err.message);
     }
 }
 

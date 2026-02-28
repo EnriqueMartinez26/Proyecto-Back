@@ -15,7 +15,7 @@ const validateEnv = () => {
   }
 
   // Variables opcionales — la app arranca pero algunas funciones no estarán disponibles
-  const optionalVars = ['BACKEND_URL', 'RESEND_API_KEY', 'RESEND_FROM_EMAIL'];
+  const optionalVars = ['BACKEND_URL', 'SMTP_EMAIL', 'SMTP_PASSWORD'];
   const missingOptional = optionalVars.filter((v) => !process.env[v]);
   if (missingOptional.length > 0) {
     logger.warn(`⚠️  Variables opcionales no configuradas: ${missingOptional.join(', ')} — algunas funciones (pagos, email) pueden no funcionar.`);
