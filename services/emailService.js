@@ -67,23 +67,25 @@ class EmailService {
         });
       }
 
-      // ─── Crear transporter con port 465/SSL (probado en localhost y en smtp_trace) ───
-      // No se usa verify() porque en Render free tier el cold start puede causar
-      // timeout en la verificación, dejando el transporter en null permanentemente.
+      // ─── Crear transporter con port 587/STARTTLS ───
+      // Render free tier bloquea conexiones salientes en puerto 465 (SMTPS).
+      // Puerto 587 (submission/STARTTLS) está permitido en la mayoría de cloud providers.
+      // No se usa verify() porque en Render cold start puede causar timeout.
       // Los reintentos de sendEmail() manejan fallos transitorios de conexión.
       this._transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false,          // false = STARTTLS (upgrade después del EHLO)
         pool: true,
         maxConnections: 3,
         maxMessages: 100,
-        socketTimeout: 15000,
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
+        socketTimeout: 30000,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
         tls: {
           servername: 'smtp.gmail.com',
-          minVersion: 'TLSv1.2'
+          minVersion: 'TLSv1.2',
+          rejectUnauthorized: true
         },
         auth: {
           user: email,
@@ -92,7 +94,7 @@ class EmailService {
       });
 
       this._fromEmail = email;
-      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: 465/SSL)', {
+      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: 587/STARTTLS)', {
         from: `${this._fromName} <${this._fromEmail}>`,
         host: smtpHost
       });

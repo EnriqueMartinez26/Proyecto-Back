@@ -69,6 +69,8 @@ app.get('/health', (req, res) => {
 
 // ─── Diagnóstico temporal SMTP (borrar después de validar) ───
 app.get('/debug/smtp', async (req, res) => {
+  const nodemailer = require('nodemailer');
+  const { promises: dns } = require('dns');
   const diag = {
     SMTP_EMAIL: process.env.SMTP_EMAIL ? `✅ ${process.env.SMTP_EMAIL}` : '❌ NO DEFINIDA',
     SMTP_PASSWORD: process.env.SMTP_PASSWORD ? `✅ (${process.env.SMTP_PASSWORD.length} chars)` : '❌ NO DEFINIDA',
@@ -76,21 +78,42 @@ app.get('/debug/smtp', async (req, res) => {
     nodeVersion: process.version,
   };
 
-  // Intentar crear transporter y verificar
+  // DNS resolution test
+  try {
+    const { address } = await dns.lookup('smtp.gmail.com', { family: 4 });
+    diag.dns = `✅ smtp.gmail.com → ${address}`;
+  } catch (e) {
+    diag.dns = `❌ ${e.message}`;
+  }
+
+  // Test each port independently
+  const email = process.env.SMTP_EMAIL;
+  const password = process.env.SMTP_PASSWORD;
+  if (email && password) {
+    for (const { port, secure, label } of [
+      { port: 587, secure: false, label: '587/STARTTLS' },
+      { port: 465, secure: true,  label: '465/SSL' }
+    ]) {
+      try {
+        const t = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port, secure,
+          connectionTimeout: 10000,
+          auth: { user: email, pass: password }
+        });
+        await t.verify();
+        diag[`port_${port}`] = `✅ ${label} OK`;
+        t.close();
+      } catch (e) {
+        diag[`port_${port}`] = `❌ ${label}: ${e.message}`;
+      }
+    }
+  }
+
+  // Current transporter status
   try {
     const emailService = require('./services/emailService');
     diag.isAvailable = await emailService.isAvailable();
-
-    if (diag.isAvailable) {
-      // Intentar verify() explícito para diagnóstico
-      const transporter = await emailService._getTransporter();
-      try {
-        await transporter.verify();
-        diag.verify = '✅ OK';
-      } catch (verErr) {
-        diag.verify = `❌ ${verErr.message}`;
-      }
-    }
   } catch (err) {
     diag.error = err.message;
   }
