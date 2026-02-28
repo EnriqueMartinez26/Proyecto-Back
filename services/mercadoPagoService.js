@@ -131,7 +131,12 @@ class MercadoPagoService {
     const secret = process.env.MERCADOPAGO_WEBHOOK_SECRET;
     const xSignature = headers['x-signature'];
 
-    if (!secret || !xSignature) return;
+    if (!xSignature || !secret) {
+      if (!this.isSandbox && secret) {
+        throw new Error('Firma de webhook ausente. Intento de evasión detectado.');
+      }
+      return;
+    }
 
     let ts, receivedHash;
     xSignature.split(',').forEach(part => {

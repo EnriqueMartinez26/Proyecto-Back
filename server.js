@@ -21,6 +21,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(helmet());
+app.use(require('./config/cors')); // CORS primero: descarta peticiones no autorizadas sin gastar CPU en ratelimit/logs
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -38,8 +39,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-app.use(require('./config/cors'));
 
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
