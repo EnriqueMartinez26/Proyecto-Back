@@ -67,54 +67,35 @@ class EmailService {
         });
       }
 
-      // ─── Port dual: intentar 465/SSL primero, fallback a 587/STARTTLS ───
-      // Render puede bloquear uno u otro dependiendo del plan/región.
-      // Se usa verify() para confirmar que la conexión real funciona.
-      const portConfigs = [
-        { port: 465, secure: true },   // SSL directo (probado en smtp_trace.txt)
-        { port: 587, secure: false }   // STARTTLS (fallback si 465 bloqueado)
-      ];
-
-      for (const { port, secure } of portConfigs) {
-        try {
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port,
-            secure,
-            pool: true,
-            maxConnections: 3,
-            maxMessages: 100,
-            socketTimeout: 10000,
-            connectionTimeout: 10000,
-            tls: {
-              servername: 'smtp.gmail.com',
-              minVersion: 'TLSv1.2'
-            },
-            auth: {
-              user: email,
-              pass: password
-            }
-          });
-
-          await transporter.verify();
-          this._transporter = transporter;
-          this._fromEmail = email;
-          logger.info(`EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: ${port}/${secure ? 'SSL' : 'STARTTLS'})`, {
-            from: `${this._fromName} <${this._fromEmail}>`,
-            host: smtpHost
-          });
-          break;
-        } catch (portErr) {
-          logger.warn(`EmailService: Puerto ${port} falló, probando siguiente...`, {
-            error: portErr.message
-          });
+      // ─── Crear transporter con port 465/SSL (probado en localhost y en smtp_trace) ───
+      // No se usa verify() porque en Render free tier el cold start puede causar
+      // timeout en la verificación, dejando el transporter en null permanentemente.
+      // Los reintentos de sendEmail() manejan fallos transitorios de conexión.
+      this._transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: 465,
+        secure: true,
+        pool: true,
+        maxConnections: 3,
+        maxMessages: 100,
+        socketTimeout: 15000,
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        tls: {
+          servername: 'smtp.gmail.com',
+          minVersion: 'TLSv1.2'
+        },
+        auth: {
+          user: email,
+          pass: password
         }
-      }
+      });
 
-      if (!this._transporter) {
-        logger.error('EmailService: No se pudo conectar a Gmail SMTP en ningún puerto (465/587)');
-        return null;
-      }
+      this._fromEmail = email;
+      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: 465/SSL)', {
+        from: `${this._fromName} <${this._fromEmail}>`,
+        host: smtpHost
+      });
     }
     return this._transporter;
   }
