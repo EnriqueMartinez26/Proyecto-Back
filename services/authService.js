@@ -25,21 +25,21 @@ class AuthService {
             isVerified: false
         });
 
-        logger.info(`[AuthService] Enviando email de bienvenida a: ${email}`);
-        let emailSent = false;
-        try {
-            const result = await emailService.sendWelcomeEmail({ name, email, verificationToken });
-            emailSent = result.success;
-            if (result.success) {
-                logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
-            } else {
-                logger.error('Falló envío de email', { email, reason: result.message });
-            }
-        } catch (error) {
-            logger.error('Excepción al enviar email', { email, error: error.message });
-        }
+        // Fire-and-forget: no bloquear la respuesta HTTP esperando al SMTP.
+        // El email se envía en background; si falla, se loguea pero el registro no se traba.
+        emailService.sendWelcomeEmail({ name, email, verificationToken })
+            .then(result => {
+                if (result.success) {
+                    logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
+                } else {
+                    logger.error('Falló envío de email de bienvenida', { email, reason: result.message });
+                }
+            })
+            .catch(error => {
+                logger.error('Excepción al enviar email de bienvenida', { email, error: error.message });
+            });
 
-        return { user, emailSent };
+        return { user, emailSent: true };
     }
 
     // Verificar email
