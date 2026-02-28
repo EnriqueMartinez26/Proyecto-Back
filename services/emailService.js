@@ -67,30 +67,54 @@ class EmailService {
         });
       }
 
-      this._transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: 465,                // Puerto SMTPS (SSL directo) — probado en smtp_trace.txt
-        secure: true,             // true = SSL/TLS desde el inicio (no STARTTLS)
-        pool: true,
-        maxConnections: 3,
-        maxMessages: 100,
-        socketTimeout: 10000,
-        connectionTimeout: 10000,
-        tls: {
-          servername: 'smtp.gmail.com',
-          minVersion: 'TLSv1.2'   // Forzar TLS 1.2+ para seguridad
-        },
-        auth: {
-          user: email,
-          pass: password
-        }
-      });
+      // ─── Port dual: intentar 465/SSL primero, fallback a 587/STARTTLS ───
+      // Render puede bloquear uno u otro dependiendo del plan/región.
+      // Se usa verify() para confirmar que la conexión real funciona.
+      const portConfigs = [
+        { port: 465, secure: true },   // SSL directo (probado en smtp_trace.txt)
+        { port: 587, secure: false }   // STARTTLS (fallback si 465 bloqueado)
+      ];
 
-      this._fromEmail = email;
-      logger.info('EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: 465/SSL)', {
-        from: `${this._fromName} <${this._fromEmail}>`,
-        host: smtpHost
-      });
+      for (const { port, secure } of portConfigs) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port,
+            secure,
+            pool: true,
+            maxConnections: 3,
+            maxMessages: 100,
+            socketTimeout: 10000,
+            connectionTimeout: 10000,
+            tls: {
+              servername: 'smtp.gmail.com',
+              minVersion: 'TLSv1.2'
+            },
+            auth: {
+              user: email,
+              pass: password
+            }
+          });
+
+          await transporter.verify();
+          this._transporter = transporter;
+          this._fromEmail = email;
+          logger.info(`EmailService: Transporter Gmail inicializado (pool: true, maxConn: 3, port: ${port}/${secure ? 'SSL' : 'STARTTLS'})`, {
+            from: `${this._fromName} <${this._fromEmail}>`,
+            host: smtpHost
+          });
+          break;
+        } catch (portErr) {
+          logger.warn(`EmailService: Puerto ${port} falló, probando siguiente...`, {
+            error: portErr.message
+          });
+        }
+      }
+
+      if (!this._transporter) {
+        logger.error('EmailService: No se pudo conectar a Gmail SMTP en ningún puerto (465/587)');
+        return null;
+      }
     }
     return this._transporter;
   }
@@ -137,7 +161,17 @@ class EmailService {
       to,
       subject,
       html,
-      text: this._htmlToText(html)
+      text: this._htmlToText(html),
+      // ─── Headers anti-spam para Microsoft (Hotmail/Outlook) ───
+      // Microsoft requiere List-Unsubscribe desde 2024 para remitentes no verificados.
+      // Precedence + X-Priority mejoran la entrega en filtros de reputación.
+      headers: {
+        'X-Priority': '1',
+        'X-Mailer': '4FunStore/1.0',
+        'Precedence': 'bulk',
+        'List-Unsubscribe': `<mailto:${this._fromEmail}?subject=unsubscribe>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+      }
     };
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
