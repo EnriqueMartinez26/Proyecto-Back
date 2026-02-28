@@ -69,16 +69,16 @@ class EmailService {
 
       this._transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: 465,
-        secure: true,
+        port: 587,                // Puerto SUBMISSION con STARTTLS (465 bloqueado en Render free tier)
+        secure: false,            // false = STARTTLS (negocia TLS después del EHLO)
         pool: true,
         maxConnections: 3,
         maxMessages: 100,
         socketTimeout: 10000,
         connectionTimeout: 10000,
         tls: {
-          // servername necesario cuando host es una IP para validar el certificado TLS
-          servername: 'smtp.gmail.com'
+          servername: 'smtp.gmail.com',
+          minVersion: 'TLSv1.2'   // Forzar TLS 1.2+ para seguridad
         },
         auth: {
           user: email,
