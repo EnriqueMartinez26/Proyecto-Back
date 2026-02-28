@@ -29,7 +29,7 @@ class OrderService {
       throw new ErrorResponse('BACKEND_URL no está configurado en las variables de entorno.', 500);
     }
 
-    // Paso 1: Validar stock y construir items para MP
+    // Paso 1: Validar productos y construir items para MP
     let calculatedTotal = 0;
     const validatedItems = [];
 
@@ -69,11 +69,24 @@ class OrderService {
       });
     }
 
-    // Paso 2: Reservar stock
+    // Paso 2: Reservar stock ATÓMICAMENTE (previene race conditions)
+    // Usamos findOneAndUpdate con condición de stock => si falla, otro comprador lo tomó primero.
     for (const item of validatedItems) {
-      await Product.findByIdAndUpdate(item.id, {
-        $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
-      });
+      const updated = await Product.findOneAndUpdate(
+        { _id: item.id, stock: { $gte: item.quantity } },
+        { $inc: { stock: -item.quantity, cantidadVendida: item.quantity } },
+        { new: true }
+      );
+      if (!updated) {
+        // Rollback: devolver stock de items ya decrementados
+        for (const prev of validatedItems) {
+          if (prev.id === item.id) break; // Llegamos al que falló, dejar de hacer rollback
+          await Product.findByIdAndUpdate(prev.id, {
+            $inc: { stock: prev.quantity, cantidadVendida: -prev.quantity }
+          });
+        }
+        throw new ErrorResponse(`Stock agotado para: ${item.title}. Otro usuario completó la compra antes.`, 409);
+      }
     }
 
     // Paso 3: Crear orden en la base de datos

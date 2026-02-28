@@ -11,8 +11,8 @@ const corsOptions = {
             process.env.FRONTEND_URL
         ].filter(Boolean);
 
-        // Permitir previews dinámicos de Vercel (solo subdominios de 4funstore)
-        const isAllowedVercel = /^https:\/\/4funstore[a-z0-9-]*\.vercel\.app$/.test(origin);
+        // Permitir previews dinámicos de Vercel (subdominios legítimos: 4funstore-<hash>.vercel.app)
+        const isAllowedVercel = /^https:\/\/4funstore(-[a-z0-9]+)*\.vercel\.app$/.test(origin);
 
         if (allowedOrigins.includes(origin) || isAllowedVercel) {
             callback(null, true);

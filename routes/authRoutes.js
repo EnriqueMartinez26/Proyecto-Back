@@ -23,7 +23,7 @@ router.post('/resend-verification', resendVerification);
 router.get('/profile', protect, getProfile);
 router.put('/profile', protect, updateProfile);
 router.put('/password', protect, changePassword);
-router.post('/logout', protect, logout);
+router.post('/logout', logout);
 
 module.exports = router;
 
