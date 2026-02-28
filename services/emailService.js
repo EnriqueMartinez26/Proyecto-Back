@@ -46,12 +46,19 @@ class EmailService {
       }
 
       this._transporter = nodemailer.createTransport({
-        service: 'gmail',
-        pool: true,           // Reutiliza conexiones TCP (evita handshake TLS por cada email)
-        maxConnections: 3,    // Gmail permite ~3 conexiones simultáneas por cuenta
-        maxMessages: 100,     // Mensajes por conexión antes de reconectar
-        socketTimeout: 5000,  // 5 seg de timeout en socket inactivo para evitar zombie sockets
-        connectionTimeout: 5000, // 5 seg max para resolver conexión inicial
+        host: 'smtp.gmail.com',   // Especificamos host en lugar de 'service' para poder controlar family
+        port: 465,                // Puerto SMTPS (SSL implícito)
+        secure: true,             // SSL/TLS desde el inicio
+        pool: true,               // Reutiliza conexiones TCP (evita handshake TLS por cada email)
+        maxConnections: 3,        // Gmail permite ~3 conexiones simultáneas por cuenta
+        maxMessages: 100,         // Mensajes por conexión antes de reconectar
+        socketTimeout: 10000,     // 10 seg de timeout (Render cold-start puede ser lento)
+        connectionTimeout: 10000, // 10 seg max para resolver conexión inicial
+        tls: {
+          // CRÍTICO: Render free tier NO soporta IPv6 saliente.
+          // Sin esto, Node resuelve smtp.gmail.com a IPv6 (2607:f8b0:...) → ENETUNREACH.
+          family: 4
+        },
         auth: {
           user: email,
           pass: password
