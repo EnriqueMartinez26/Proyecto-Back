@@ -10,9 +10,9 @@ const errorHandler = (err, req, res, next) => {
   delete safeBody.confirmPassword;
   delete safeBody.token;
 
-  logger.error(`Error del Servidor: ${err.message}`, { 
-    stack: err.stack, 
-    url: req.originalUrl, 
+  logger.error(`Error del Servidor: ${err.message}`, {
+    stack: err.stack,
+    url: req.originalUrl,
     method: req.method,
     body: safeBody
   });
@@ -23,8 +23,8 @@ const errorHandler = (err, req, res, next) => {
 
   if (err.name === 'ValidationError') {
     statusCode = 400;
-    message = 'Error de validación de datos';
     errors = Object.values(err.errors).map(e => e.message);
+    message = errors.length > 0 ? errors.join('. ') : 'Error de validación de datos';
   } else if (err.code === 11000) {
     statusCode = 409;
     const field = Object.keys(err.keyPattern)[0];
