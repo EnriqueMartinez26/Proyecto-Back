@@ -16,31 +16,41 @@ const fileOptions = {
   tailable: true,
 };
 
+// Configuramos los transports condicionalmente
+const transports = [];
+
+// En la nube (Vercel, Render, etc.) casi siempre dependemos del Console 
+// porque los logs del filesystem no persisten o están bloqueados.
+transports.push(new winston.transports.Console({
+  format: winston.format.combine(
+    winston.format.colorize(),
+    winston.format.simple()
+  )
+}));
+
+// Si NO estamos en Vercel, habilitamos la escritura en el disco (ej. para desarrollo local).
+// Vercel inyecta automáticamente la variable de entorno `VERCEL=1`.
+if (!process.env.VERCEL) {
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(__dirname, '../logs/error.log'),
+      level: 'error',
+      ...fileOptions
+    })
+  );
+  transports.push(
+    new winston.transports.File({
+      filename: path.join(__dirname, '../logs/combined.log'),
+      ...fileOptions
+    })
+  );
+}
+
 const logger = winston.createLogger({
   level: 'info',
   format: logFormat,
   defaultMeta: { service: '4fun-backend' },
-  transports: [
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../logs/error.log'), 
-      level: 'error',
-      ...fileOptions
-    }),
-    new winston.transports.File({ 
-      filename: path.join(__dirname, '../logs/combined.log'),
-      ...fileOptions
-    })
-  ]
+  transports: transports
 });
-
-// Si no estamos en producción, también mostramos logs en la consola con colores
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    )
-  }));
-}
 
 module.exports = logger;
