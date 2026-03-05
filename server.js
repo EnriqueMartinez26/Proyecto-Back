@@ -92,7 +92,7 @@ app.get('/debug/smtp', async (req, res) => {
   if (email && password) {
     for (const { port, secure, label } of [
       { port: 587, secure: false, label: '587/STARTTLS' },
-      { port: 465, secure: true,  label: '465/SSL' }
+      { port: 465, secure: true, label: '465/SSL' }
     ]) {
       try {
         const t = nodemailer.createTransport({
@@ -130,18 +130,24 @@ app.use((req, res, next) => {
 
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
-  logger.info(`🛡️  Seguridad Activada (Helmet + RateLimit)`);
-  logger.info(`✅ Servidor corriendo en puerto ${PORT}`);
-  logger.info(`🌍 Modo: ${process.env.NODE_ENV}`);
-});
+// Exportar el app para Vercel Serverless
+module.exports = app;
 
-// Graceful shutdown (Render envía SIGTERM al redeploy)
-process.on('SIGTERM', () => {
-  logger.info('🛑 SIGTERM recibido. Cerrando servidor...');
-  server.close(() => {
-    logger.info('✅ Servidor cerrado limpiamente.');
-    process.exit(0);
+// Iniciar servidor localmente (Vercel ignora esto si no se llama directo)
+if (process.env.NODE_ENV !== 'production' || process.env.RENDER) {
+  const PORT = process.env.PORT || 5000;
+  const server = app.listen(PORT, () => {
+    logger.info(`🛡️  Seguridad Activada (Helmet + RateLimit)`);
+    logger.info(`✅ Servidor corriendo en puerto ${PORT}`);
+    logger.info(`🌍 Modo: ${process.env.NODE_ENV}`);
   });
-});
+
+  // Graceful shutdown (Render envía SIGTERM al redeploy)
+  process.on('SIGTERM', () => {
+    logger.info('🛑 SIGTERM recibido. Cerrando servidor...');
+    server.close(() => {
+      logger.info('✅ Servidor cerrado limpiamente.');
+      process.exit(0);
+    });
+  });
+}
