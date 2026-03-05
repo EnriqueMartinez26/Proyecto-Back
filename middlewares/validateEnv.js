@@ -6,8 +6,9 @@ const validateEnv = () => {
 
   const missingCritical = criticalVars.filter((v) => !process.env[v]);
   if (missingCritical.length > 0) {
-    logger.error(`❌ FATAL ERROR: Faltan variables de entorno críticas: ${missingCritical.join(', ')}`);
-    process.exit(1);
+    const errorMsg = `❌ FATAL ERROR: Faltan variables de entorno críticas: ${missingCritical.join(', ')}`;
+    logger.error(errorMsg);
+    throw new Error(errorMsg); // En Vercel es mejor lanzar un error que matar el proceso
   }
 
   if (process.env.JWT_SECRET.length < 32) {
