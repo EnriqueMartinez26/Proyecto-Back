@@ -28,22 +28,27 @@ transports.push(new winston.transports.Console({
   )
 }));
 
-// Si NO estamos en producción, habilitamos la escritura en disco (desarrollo local).
-// En producción (Vercel, Render, etc.) el filesystem es read-only o efímero.
-if (process.env.NODE_ENV !== 'production') {
-  transports.push(
-    new winston.transports.File({
-      filename: path.join(__dirname, '../logs/error.log'),
-      level: 'error',
-      ...fileOptions
-    })
-  );
-  transports.push(
-    new winston.transports.File({
-      filename: path.join(__dirname, '../logs/combined.log'),
-      ...fileOptions
-    })
-  );
+// Deshabilitar la escritura en disco (desarrollo local) si estamos en Vercel o en producción
+// En producción o en Vercel (read-only filesystem), dependemos de loggers de consola.
+const isVercel = process.env.VERCEL || process.env.VERCEL_ENV;
+if (process.env.NODE_ENV !== 'production' && !isVercel) {
+  try {
+    transports.push(
+      new winston.transports.File({
+        filename: path.join(__dirname, '../logs/error.log'),
+        level: 'error',
+        ...fileOptions
+      })
+    );
+    transports.push(
+      new winston.transports.File({
+        filename: path.join(__dirname, '../logs/combined.log'),
+        ...fileOptions
+      })
+    );
+  } catch (error) {
+    console.warn("No se pudieron inicializar los logs de archivo:", error);
+  }
 }
 
 const logger = winston.createLogger({
