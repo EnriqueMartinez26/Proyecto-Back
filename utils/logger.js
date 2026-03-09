@@ -28,9 +28,9 @@ transports.push(new winston.transports.Console({
   )
 }));
 
-// Si NO estamos en Vercel, habilitamos la escritura en el disco (ej. para desarrollo local).
-// Vercel inyecta automáticamente la variable de entorno `VERCEL=1`.
-if (!process.env.VERCEL) {
+// Si NO estamos en producción, habilitamos la escritura en disco (desarrollo local).
+// En producción (Vercel, Render, etc.) el filesystem es read-only o efímero.
+if (process.env.NODE_ENV !== 'production') {
   transports.push(
     new winston.transports.File({
       filename: path.join(__dirname, '../logs/error.log'),

@@ -90,12 +90,31 @@ const mapToModel = (data) => {
 
 // --- SERVICIO PÚBLICO ---
 
+const createFuzzyRegex = (str) => {
+    // Replace vowels with regex that matches accented variants, case insensitive
+    // Remove extra spaces for cleaner search
+    const normalized = str.trim().replace(/\s+/g, ' ');
+    return normalized
+        .replace(/a/ig, '[aáàäâAÁÀÄÂ]')
+        .replace(/e/ig, '[eéèëêEÉÈËÊ]')
+        .replace(/i/ig, '[iíìïîIÍÌÏÎ]')
+        .replace(/o/ig, '[oóòöôOÓÒÖÔ]')
+        .replace(/u/ig, '[uúùüûUÚÙÜÛ]');
+};
+
 exports.getProducts = async (query = {}) => {
     const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
     const filter = { activo: true };
 
     if (search) {
-        filter.$text = { $search: search };
+        const fuzzySearchPattern = createFuzzyRegex(search);
+        // Case-insensitive regex match across multiple fields
+        filter.$or = [
+            { nombre: { $regex: fuzzySearchPattern, $options: 'i' } },
+            { descripcion: { $regex: fuzzySearchPattern, $options: 'i' } },
+            { generoId: { $regex: fuzzySearchPattern, $options: 'i' } },
+            { plataformaId: { $regex: fuzzySearchPattern, $options: 'i' } }
+        ];
     }
 
     // Support comma-separated IDs for Multi-Select
