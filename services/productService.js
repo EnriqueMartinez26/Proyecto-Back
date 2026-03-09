@@ -227,6 +227,11 @@ exports.createProduct = async (data) => {
     const newOrder = firstProduct ? firstProduct.orden - 1000 : 0;
     modelData.orden = newOrder;
 
+    // Force stock to 0 for Digital products; stock is derived from DigitalKeys
+    if (modelData.tipo === 'Digital') {
+        modelData.stock = 0;
+    }
+
     const product = await Product.create(modelData);
 
     logger.info(`Producto creado exitosamente: ${product._id}`, {
@@ -265,6 +270,11 @@ exports.updateProduct = async (id, data) => {
     const product = await Product.findById(id);
     if (!product) {
         throw new ErrorResponse('Producto no encontrado', 404);
+    }
+
+    // Force stock consistency: If product is digital, stock is managed via keys, ignore user input
+    if (product.tipo === 'Digital' || modelData.tipo === 'Digital') {
+        delete modelData.stock;
     }
 
     Object.assign(product, modelData);
