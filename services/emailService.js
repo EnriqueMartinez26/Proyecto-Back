@@ -550,6 +550,83 @@ class EmailService {
       html
     });
   }
+  /**
+   * Envía el email de recuperación de contraseña con el enlace de reset.
+   * @param {Object} params
+   * @param {string} params.name     - Nombre del usuario
+   * @param {string} params.email    - Email del usuario
+   * @param {string} params.resetUrl - URL completa con el token de reset
+   */
+  async sendPasswordResetEmail({ name, email, resetUrl }) {
+    const year = new Date().getFullYear();
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recuperar contraseña — 4Fun</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0f0f23;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#0f0f23;padding:40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0"
+          style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);border-radius:16px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+          <tr>
+            <td style="background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);padding:40px;text-align:center;">
+              <h1 style="margin:0;font-size:34px;font-weight:700;color:#fff;letter-spacing:2px;">4FUN</h1>
+              <p style="margin:8px 0 0;font-size:13px;color:rgba(255,255,255,0.8);text-transform:uppercase;letter-spacing:3px;">Recuperación de contraseña</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:50px 40px 30px;">
+              <h2 style="margin:0 0 18px;font-size:24px;font-weight:600;color:#fff;">Hola, ${name}</h2>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.7;color:#a0a0b9;">
+                Recibimos una solicitud para restablecer la contraseña de tu cuenta en
+                <strong style="color:#667eea;">4Fun Store</strong>.
+                Hacé clic en el botón de abajo para crear una nueva contraseña.
+              </p>
+              <div style="background:rgba(255,193,7,0.08);border-left:4px solid #ffc107;padding:14px 18px;border-radius:0 8px 8px 0;margin-bottom:30px;">
+                <p style="margin:0;font-size:13px;color:#e0c87a;">
+                  <strong>Este enlace expira en 1 hora.</strong><br>
+                  Si no solicitaste el cambio de contraseña, podés ignorar este correo.
+                </p>
+              </div>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 30px;">
+                <tr>
+                  <td style="border-radius:8px;background:linear-gradient(90deg,#667eea 0%,#764ba2 100%);">
+                    <a href="${resetUrl}" target="_blank"
+                      style="display:inline-block;padding:16px 40px;font-size:15px;font-weight:600;color:#fff;text-decoration:none;letter-spacing:0.5px;">
+                      Restablecer contraseña
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0;font-size:13px;color:#6b6b80;line-height:1.6;">
+                Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br>
+                <span style="color:#667eea;word-break:break-all;">${resetUrl}</span>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background:rgba(0,0,0,0.25);padding:28px 40px;text-align:center;border-top:1px solid rgba(255,255,255,0.05);">
+              <p style="margin:0;font-size:12px;color:#6b6b80;">© ${year} 4Fun Store. Todos los derechos reservados.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    return this.sendEmail({
+      to: email,
+      subject: 'Restablecé tu contraseña — 4Fun Store',
+      html
+    });
+  }
 }
 
 module.exports = new EmailService();

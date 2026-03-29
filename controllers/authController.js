@@ -183,3 +183,36 @@ exports.resendVerification = async (req, res, next) => {
         next(error);
     }
 };
+
+// @desc    Solicitar reseteo de contraseña (envía email con token)
+// @route   POST /api/auth/forgot-password
+// @access  Public
+exports.forgotPassword = async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            throw new ErrorResponse('Se requiere el email', 400);
+        }
+        const result = await AuthService.forgotPassword(email);
+        res.status(200).json({ success: true, message: result.message });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// @desc    Restablecer contraseña con token válido
+// @route   PUT /api/auth/reset-password/:token
+// @access  Public
+exports.resetPassword = async (req, res, next) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+        if (!token || !password) {
+            throw new ErrorResponse('Token y nueva contraseña son requeridos', 400);
+        }
+        await AuthService.resetPassword(token, password);
+        res.status(200).json({ success: true, message: 'Contraseña restablecida correctamente. Ya podés iniciar sesión.' });
+    } catch (error) {
+        next(error);
+    }
+};

@@ -47,3 +47,5 @@ test-results/
 inactivos_reporte.json
 analisis_completo.json
 scripts/archive/
+
+/generated/prisma

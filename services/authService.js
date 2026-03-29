@@ -121,6 +121,68 @@ class AuthService {
 
         return user;
     }
+
+    // Solicitar restablecimiento de contraseña
+    async forgotPassword(email) {
+        const user = await User.findOne({ email });
+
+        // Por seguridad no revelamos si el email existe o no (evita enumeración)
+        if (!user) {
+            return { message: 'Si el email está registrado, recibirás un enlace de recuperación.' };
+        }
+
+        // Generar token aleatorio y guardarlo hasheado en la BD
+        const rawToken = crypto.randomBytes(20).toString('hex');
+        user.resetPasswordToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+        user.resetPasswordExpire = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+        await user.save({ validateBeforeSave: false });
+
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
+        const resetUrl = `${frontendUrl}/recuperar-contrasena?token=${rawToken}`;
+
+        const result = await emailService.sendPasswordResetEmail({
+            name: user.name,
+            email: user.email,
+            resetUrl
+        });
+
+        if (!result.success) {
+            // Si el email falla, limpiar el token para no dejar estado inconsistente
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+            throw new ErrorResponse('No se pudo enviar el email de recuperación. Intentá más tarde.', 503);
+        }
+
+        logger.info('Email de recuperación de contraseña enviado', { email: user.email, messageId: result.messageId });
+        return { message: 'Si el email está registrado, recibirás un enlace de recuperación.' };
+    }
+
+    // Restablecer contraseña con token
+    async resetPassword(rawToken, newPassword) {
+        if (!newPassword || newPassword.length < 6) {
+            throw new ErrorResponse('La contraseña debe tener al menos 6 caracteres.', 400);
+        }
+
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        const user = await User.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            throw new ErrorResponse('El enlace de recuperación es inválido o ha expirado.', 400);
+        }
+
+        user.password = newPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        logger.info('Contraseña restablecida correctamente', { email: user.email });
+        return user;
+    }
 }
 
 module.exports = new AuthService();
