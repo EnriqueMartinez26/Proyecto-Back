@@ -1,41 +1,53 @@
-const User = require('../models/User');
-const emailService = require('../services/emailService');
+const prisma = require('../lib/prisma');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const emailService = require('./emailService');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 const crypto = require('crypto');
 
+// Helper: hash a password
+const hashPassword = async (password) => {
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
+};
+
+// Helper: generate JWT
+const signToken = (userId) =>
+    jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+        expiresIn: process.env.JWT_EXPIRE || '7d'
+    });
+
+// Helper: compare passwords
+const matchPassword = (entered, hashed) => bcrypt.compare(entered, hashed);
+
 class AuthService {
-    // Registrar un nuevo usuario
     async register({ name, email, password }) {
-        const userExists = await User.findOne({ email });
+        const userExists = await prisma.user.findUnique({ where: { email } });
+        if (userExists) throw new ErrorResponse('El usuario ya existe', 400);
 
-        if (userExists) {
-            throw new ErrorResponse('El usuario ya existe', 400);
-        }
-
-        // Generar token de verificación
         const verificationToken = crypto.randomBytes(20).toString('hex');
+        const hashedPwd = await hashPassword(password);
 
-        const user = await User.create({
-            name,
-            email,
-            password,
-            verificationToken,
-            verificationTokenExpire: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
-            isVerified: false
+        const user = await prisma.user.create({
+            data: {
+                name,
+                email,
+                password: hashedPwd,
+                verificationToken,
+                verificationTokenExp: new Date(Date.now() + 24 * 60 * 60 * 1000),
+                isVerified: false
+            }
         });
 
-        // Fire-and-forget: no bloquear la respuesta HTTP esperando al SMTP.
-        // El email se envía en background; si falla, se loguea pero el registro no se traba.
-        // emailSent refleja el resultado real una vez que la promesa resuelve en el mismo tick.
         let emailSent = false;
         const emailPromise = emailService.sendWelcomeEmail({ name, email, verificationToken })
             .then(result => {
                 emailSent = result.success;
                 if (result.success) {
-                    logger.info('Email de bienvenida enviado', { email, messageId: result.messageId });
+                    logger.info('Email de bienvenida enviado', { email });
                 } else {
-                    logger.warn('Falló envío de email de bienvenida (reenvío disponible vía /resend-verification)', { email, reason: result.message });
+                    logger.warn('Falló envío de email de bienvenida', { email, reason: result.message });
                 }
             })
             .catch(error => {
@@ -43,122 +55,94 @@ class AuthService {
                 logger.error('Excepción al enviar email de bienvenida', { email, error: error.message });
             });
 
-        // Esperar hasta 4 s para obtener el resultado real sin bloquear demasiado.
-        // 4 s cubre el cold start del pool SMTP (DNS + handshake TLS ~2-3 s en Render).
-        // Si el SMTP tarda más, el registro igual responde 201 y emailSent queda false (honesto).
         await Promise.race([emailPromise, new Promise(r => setTimeout(r, 4000))]);
-
-        return { user, emailSent };
+        return { user: { ...user, _id: user.id }, emailSent };
     }
 
-    // Verificar email
     async verifyEmail(token) {
-        const user = await User.findOne({
-            verificationToken: token,
-            verificationTokenExpire: { $gt: Date.now() }
+        const user = await prisma.user.findFirst({
+            where: {
+                verificationToken: token,
+                verificationTokenExp: { gt: new Date() }
+            }
         });
 
-        if (!user) {
-            throw new ErrorResponse('Token de verificación inválido o expirado', 400);
-        }
+        if (!user) throw new ErrorResponse('Token de verificación inválido o expirado', 400);
 
-        user.isVerified = true;
-        user.verificationToken = undefined;
-        user.verificationTokenExpire = undefined;
-        await user.save();
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { isVerified: true, verificationToken: null, verificationTokenExp: null }
+        });
 
-        return user;
+        return { ...user, _id: user.id };
     }
 
-    // Reenviar email de verificación
     async resendVerification(email) {
-        const user = await User.findOne({ email });
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) throw new ErrorResponse('No se encontró una cuenta con ese email', 404);
+        if (user.isVerified) throw new ErrorResponse('Esta cuenta ya está verificada', 400);
 
-        if (!user) {
-            throw new ErrorResponse('No se encontró una cuenta con ese email', 404);
-        }
-
-        if (user.isVerified) {
-            throw new ErrorResponse('Esta cuenta ya está verificada', 400);
-        }
-
-        // Generar nuevo token
         const verificationToken = crypto.randomBytes(20).toString('hex');
-        user.verificationToken = verificationToken;
-        user.verificationTokenExpire = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await user.save();
-
-        const result = await emailService.sendWelcomeEmail({
-            name: user.name,
-            email: user.email,
-            verificationToken
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                verificationToken,
+                verificationTokenExp: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            }
         });
 
-        if (!result.success) {
-            throw new ErrorResponse('No se pudo enviar el email de verificación. Intentá más tarde.', 503);
-        }
-
+        const result = await emailService.sendWelcomeEmail({ name: user.name, email, verificationToken });
+        if (!result.success) throw new ErrorResponse('No se pudo enviar el email de verificación. Intentá más tarde.', 503);
         return { message: 'Email de verificación reenviado exitosamente' };
     }
 
-    // Iniciar sesión
     async login(email, password) {
-        if (!email || !password) {
-            throw new ErrorResponse('Por favor ingrese email y contraseña', 400);
-        }
+        if (!email || !password) throw new ErrorResponse('Por favor ingrese email y contraseña', 400);
 
-        const user = await User.findOne({ email }).select('+password');
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) throw new ErrorResponse('Credenciales inválidas', 401);
 
-        if (!user) {
-            throw new ErrorResponse('Credenciales inválidas', 401);
-        }
+        const isMatch = await matchPassword(password, user.password);
+        if (!isMatch) throw new ErrorResponse('Credenciales inválidas', 401);
 
-        const isMatch = await user.matchPassword(password);
-
-        if (!isMatch) {
-            throw new ErrorResponse('Credenciales inválidas', 401);
-        }
-
+        // Attach helper methods expected by authController
+        user._id = user.id;
+        user.getSignedJwtToken = () => signToken(user.id);
         return user;
     }
 
-    // Solicitar restablecimiento de contraseña
     async forgotPassword(email) {
-        const user = await User.findOne({ email });
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user) return { message: 'Si el email está registrado, recibirás un enlace de recuperación.' };
 
-        // Por seguridad no revelamos si el email existe o no (evita enumeración)
-        if (!user) {
-            return { message: 'Si el email está registrado, recibirás un enlace de recuperación.' };
-        }
-
-        // Generar token aleatorio y guardarlo hasheado en la BD
         const rawToken = crypto.randomBytes(20).toString('hex');
-        user.resetPasswordToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-        user.resetPasswordExpire = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
-        await user.save({ validateBeforeSave: false });
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        await prisma.user.update({
+            where: { id: user.id },
+            data: {
+                resetPasswordToken: hashedToken,
+                resetPasswordExp: new Date(Date.now() + 60 * 60 * 1000)
+            }
+        });
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:9002';
         const resetUrl = `${frontendUrl}/recuperar-contrasena?token=${rawToken}`;
 
-        const result = await emailService.sendPasswordResetEmail({
-            name: user.name,
-            email: user.email,
-            resetUrl
-        });
+        const result = await emailService.sendPasswordResetEmail({ name: user.name, email: user.email, resetUrl });
 
         if (!result.success) {
-            // Si el email falla, limpiar el token para no dejar estado inconsistente
-            user.resetPasswordToken = undefined;
-            user.resetPasswordExpire = undefined;
-            await user.save({ validateBeforeSave: false });
+            await prisma.user.update({
+                where: { id: user.id },
+                data: { resetPasswordToken: null, resetPasswordExp: null }
+            });
             throw new ErrorResponse('No se pudo enviar el email de recuperación. Intentá más tarde.', 503);
         }
 
-        logger.info('Email de recuperación de contraseña enviado', { email: user.email, messageId: result.messageId });
+        logger.info('Email de recuperación enviado', { email: user.email });
         return { message: 'Si el email está registrado, recibirás un enlace de recuperación.' };
     }
 
-    // Restablecer contraseña con token
     async resetPassword(rawToken, newPassword) {
         if (!newPassword || newPassword.length < 6) {
             throw new ErrorResponse('La contraseña debe tener al menos 6 caracteres.', 400);
@@ -166,22 +150,25 @@ class AuthService {
 
         const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-        const user = await User.findOne({
-            resetPasswordToken: hashedToken,
-            resetPasswordExpire: { $gt: Date.now() }
+        const user = await prisma.user.findFirst({
+            where: {
+                resetPasswordToken: hashedToken,
+                resetPasswordExp: { gt: new Date() }
+            }
         });
 
-        if (!user) {
-            throw new ErrorResponse('El enlace de recuperación es inválido o ha expirado.', 400);
-        }
+        if (!user) throw new ErrorResponse('El enlace de recuperación es inválido o ha expirado.', 400);
 
-        user.password = newPassword;
-        user.resetPasswordToken = undefined;
-        user.resetPasswordExpire = undefined;
-        await user.save();
+        const hashedPwd = await hashPassword(newPassword);
+        const updated = await prisma.user.update({
+            where: { id: user.id },
+            data: { password: hashedPwd, resetPasswordToken: null, resetPasswordExp: null }
+        });
 
-        logger.info('Contraseña restablecida correctamente', { email: user.email });
-        return user;
+        logger.info('Contraseña restablecida', { email: updated.email });
+        updated._id = updated.id;
+        updated.getSignedJwtToken = () => signToken(updated.id);
+        return updated;
     }
 }
 

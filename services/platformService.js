@@ -1,11 +1,11 @@
-const Platform = require('../models/Platform');
+const prisma = require('../lib/prisma');
 const createMetadataService = require('./metadataService');
 
-const service = createMetadataService(Platform, {
+const service = createMetadataService('platform', {
     singular: 'plataforma',
     plural: 'plataformas',
     notFoundMsg: 'Plataforma no encontrada',
-    productField: 'plataformaId',
+    productField: 'platformId',
 });
 
 exports.getPlatforms = service.getAll.bind(service);

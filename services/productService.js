@@ -1,371 +1,323 @@
-const Product = require('../models/Product');
-const Platform = require('../models/Platform');
-const Genre = require('../models/Genre');
-const { DEFAULT_IMAGE } = require('../utils/constants');
+const prisma = require('../lib/prisma');
 const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
-// --- PRIVATE MAPPER (DTO TRANSFORMER) ---
-// Transforma el documento Mongoose (Español) a DTO API (Inglés)
-const toResponseDTO = (productDoc) => {
-    if (!productDoc) return null;
+// Include standard product relations
+const PRODUCT_INCLUDE = {
+    platform: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+    genre: { select: { id: true, slug: true, nombre: true, imageId: true, activo: true } },
+};
 
-    const p = productDoc.toObject ? productDoc.toObject() : productDoc;
-
-    // Discount: calcular finalPrice dinámicamente
+function productToDTO(p) {
+    if (!p) return null;
     const discountActive = p.descuentoPorcentaje > 0 &&
         (!p.descuentoFechaFin || new Date(p.descuentoFechaFin) > new Date());
-
     const discountPercentage = discountActive ? p.descuentoPorcentaje : 0;
     const finalPrice = discountActive
-        ? Number((p.precio * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
-        : p.precio;
+        ? Number((Number(p.precio) * (1 - p.descuentoPorcentaje / 100)).toFixed(2))
+        : Number(p.precio);
 
     return {
-        id: p._id,
+        id: p.id,
+        _id: p.id,
         name: p.nombre,
         description: p.descripcion,
-        price: p.precio,
+        price: Number(p.precio),
         finalPrice,
         discountPercentage,
         discountEndDate: p.descuentoFechaFin,
-        platform: p.platformObj ? {
-            id: p.platformObj.id,
-            name: p.platformObj.nombre,
-            imageId: p.platformObj.imageId,
-            active: p.platformObj.activo
-        } : { id: p.plataformaId, name: 'Unknown' },
-        genre: p.genreObj ? {
-            id: p.genreObj.id,
-            name: p.genreObj.nombre,
-            imageId: p.genreObj.imageId,
-            active: p.genreObj.activo
-        } : { id: p.generoId, name: 'Unknown' },
+        platform: p.platform ? {
+            id: p.platform.slug,
+            name: p.platform.nombre,
+            imageId: p.platform.imageId,
+            active: p.platform.activo
+        } : { id: p.platformId, name: 'Unknown' },
+        genre: p.genre ? {
+            id: p.genre.slug,
+            name: p.genre.nombre,
+            imageId: p.genre.imageId,
+            active: p.genre.activo
+        } : { id: p.genreId, name: 'Unknown' },
         type: p.tipo === 'Fisico' ? 'Physical' : 'Digital',
         releaseDate: p.fechaLanzamiento,
         developer: p.desarrollador,
-        imageId: p.imagenUrl || DEFAULT_IMAGE,
+        imageId: p.imagenUrl || 'https://placehold.co/600x400?text=No+Image',
         trailerUrl: p.trailerUrl || '',
-        rating: p.calificacion,
+        rating: Number(p.calificacion),
         stock: p.stock,
         active: p.activo,
         specPreset: p.specPreset,
-        requirements: p.requisitos,
-        order: p.orden // Expose order index
+        requirements: p.requirements
+            ? Object.fromEntries(
+                ['minimum', 'recommended'].map(tipo => [tipo,
+                    Object.fromEntries((p.requirements.filter(r => r.tipo === tipo)).map(r => [r.key, r.value]))
+                ])
+            )
+            : {},
+        order: p.orden
     };
-};
+}
 
-// Exportar el mapper para uso en otros controladores (Cart, Wishlist, Order)
-exports.transformDTO = toResponseDTO;
-
-// --- PRIVATE MAPPER (DTO TO MODEL) ---
-const mapToModel = (data) => {
-    const modelData = { ...data }; // Copy original data
-
-    // Map English keys to Mongoose Schema keys
-    if (data.name !== undefined) modelData.nombre = data.name;
-    if (data.description !== undefined) modelData.descripcion = data.description;
-    if (data.price !== undefined) modelData.precio = data.price;
-    if (data.platform !== undefined) modelData.plataformaId = data.platform;
-    if (data.genre !== undefined) modelData.generoId = data.genre;
-    if (data.type !== undefined) {
-        // Map English Enum to Spanish Enum if necessary
-        modelData.tipo = data.type === 'Physical' ? 'Fisico' : data.type;
-    }
-    if (data.releaseDate !== undefined) modelData.fechaLanzamiento = data.releaseDate;
-    if (data.developer !== undefined) modelData.desarrollador = data.developer;
-    if (data.imageId !== undefined) modelData.imagenUrl = data.imageId;
-    if (data.trailerUrl !== undefined) modelData.trailerUrl = data.trailerUrl;
-    if (data.rating !== undefined) modelData.calificacion = data.rating;
-    if (data.stock !== undefined) modelData.stock = data.stock;
-    if (data.active !== undefined) modelData.activo = data.active;
-    if (data.specPreset !== undefined) modelData.specPreset = data.specPreset;
-    if (data.requirements !== undefined) modelData.requisitos = data.requirements;
-    // Discount Fields Mapping
-    if (data.discountPercentage !== undefined) modelData.descuentoPorcentaje = data.discountPercentage;
-    if (data.discountEndDate !== undefined) modelData.descuentoFechaFin = data.discountEndDate || null;
-
-    return modelData;
-};
-
-// --- SERVICIO PÚBLICO ---
-
-const createFuzzyRegex = (str) => {
-    // Replace vowels with regex that matches accented variants, case insensitive
-    // Remove extra spaces for cleaner search
-    const normalized = str.trim().replace(/\s+/g, ' ');
-    return normalized
-        .replace(/a/ig, '[aáàäâAÁÀÄÂ]')
-        .replace(/e/ig, '[eéèëêEÉÈËÊ]')
-        .replace(/i/ig, '[iíìïîIÍÌÏÎ]')
-        .replace(/o/ig, '[oóòöôOÓÒÖÔ]')
-        .replace(/u/ig, '[uúùüûUÚÙÜÛ]');
-};
+exports.transformDTO = productToDTO;
 
 exports.getProducts = async (query = {}) => {
     const { search, platform, genre, minPrice, maxPrice, page = 1, limit = 10, sort, discounted } = query;
-    const filter = { activo: true };
+
+    const where = { activo: true };
 
     if (search) {
-        const fuzzySearchPattern = createFuzzyRegex(search);
-        // Case-insensitive regex match across multiple fields
-        filter.$or = [
-            { nombre: { $regex: fuzzySearchPattern, $options: 'i' } },
-            { descripcion: { $regex: fuzzySearchPattern, $options: 'i' } },
-            { generoId: { $regex: fuzzySearchPattern, $options: 'i' } },
-            { plataformaId: { $regex: fuzzySearchPattern, $options: 'i' } }
+        where.OR = [
+            { nombre: { contains: search, mode: 'insensitive' } },
+            { descripcion: { contains: search, mode: 'insensitive' } },
+            { desarrollador: { contains: search, mode: 'insensitive' } },
         ];
     }
 
-    // Support comma-separated IDs for Multi-Select
     if (platform) {
         const platforms = platform.split(',').filter(Boolean);
-        if (platforms.length > 0) filter.plataformaId = { $in: platforms };
+        if (platforms.length > 0) {
+            const platformRecords = await prisma.platform.findMany({ where: { slug: { in: platforms } } });
+            where.platformId = { in: platformRecords.map(p => p.id) };
+        }
     }
+
     if (genre) {
         const genres = genre.split(',').filter(Boolean);
-        if (genres.length > 0) filter.generoId = { $in: genres };
+        if (genres.length > 0) {
+            const genreRecords = await prisma.genre.findMany({ where: { slug: { in: genres } } });
+            where.genreId = { in: genreRecords.map(g => g.id) };
+        }
     }
 
     if (minPrice || maxPrice) {
-        filter.precio = {};
-        if (minPrice) filter.precio.$gte = Number(minPrice);
-        if (maxPrice) filter.precio.$lte = Number(maxPrice);
+        where.precio = {};
+        if (minPrice) where.precio.gte = Number(minPrice);
+        if (maxPrice) where.precio.lte = Number(maxPrice);
     }
 
     if (discounted === 'true') {
-        filter.descuentoPorcentaje = { $gt: 0 };
-        filter.$or = [
+        where.descuentoPorcentaje = { gt: 0 };
+        where.OR = [
             { descuentoFechaFin: null },
-            { descuentoFechaFin: { $gt: new Date() } }
+            { descuentoFechaFin: { gt: new Date() } }
         ];
     }
 
-    // Validación de paginación
     const pageNum = Math.max(1, Number(page));
     const limitNum = Math.max(1, Number(limit));
 
-    // Lógica de ordenamiento dinámico
-    let sortOptions = { orden: 1 }; // Default: Manual Order (Ascending)
+    const sortMap = {
+        'price': { precio: 'asc' },
+        '-price': { precio: 'desc' },
+        'rating': { calificacion: 'asc' },
+        '-rating': { calificacion: 'desc' },
+        'name': { nombre: 'asc' },
+        '-name': { nombre: 'desc' },
+        'createdAt': { createdAt: 'asc' },
+        '-createdAt': { createdAt: 'desc' },
+        'order': { orden: 'asc' },
+        '-order': { orden: 'desc' },
+    };
+    const orderBy = (sort && sortMap[sort]) ? sortMap[sort] : { orden: 'asc' };
 
-    if (sort) {
-        // Soporta formato string "-price" o "price"
-        const sortField = sort.startsWith('-') ? sort.substring(1) : sort;
-        const sortOrder = sort.startsWith('-') ? -1 : 1;
-
-        // Mapeo seguro de campos (Evita inyección de sorts raros)
-        const allowedSorts = {
-            'price': 'precio',
-            'createdAt': 'createdAt',
-            'rating': 'calificacion',
-            'name': 'nombre',
-            'order': 'orden'
-        };
-
-        if (allowedSorts[sortField]) {
-            sortOptions = { [allowedSorts[sortField]]: sortOrder };
-        }
-    }
-
-    // Ejecución con Populate y Lean para performance (parallelized)
     const [products, count] = await Promise.all([
-        Product.find(filter)
-            .populate('platformObj')
-            .populate('genreObj')
-            .skip((pageNum - 1) * limitNum)
-            .limit(limitNum)
-            .sort(sortOptions)
-            .lean(),
-        Product.countDocuments(filter)
+        prisma.product.findMany({
+            where,
+            include: { ...PRODUCT_INCLUDE, requirements: true },
+            skip: (pageNum - 1) * limitNum,
+            take: limitNum,
+            orderBy
+        }),
+        prisma.product.count({ where })
     ]);
 
-    logger.info(`Productos obtenidos: ${products.length} de ${count} totales`, {
-        filter,
-        page: pageNum,
-        limit: limitNum
-    });
-
     return {
-        data: products.map(toResponseDTO),
-        meta: {
-            total: count,
-            page: pageNum,
-            limit: limitNum,
-            totalPages: Math.ceil(count / limitNum)
-        }
+        data: products.map(productToDTO),
+        meta: { total: count, page: pageNum, limit: limitNum, totalPages: Math.ceil(count / limitNum) }
     };
 };
 
 exports.getProductById = async (id) => {
-    const product = await Product.findById(id)
-        .populate('platformObj')
-        .populate('genreObj')
-        .lean();
-
-    if (!product) {
-        throw new ErrorResponse('Producto no encontrado', 404);
-    }
-    return toResponseDTO(product);
+    const product = await prisma.product.findUnique({
+        where: { id },
+        include: { ...PRODUCT_INCLUDE, requirements: true }
+    });
+    if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+    return productToDTO(product);
 };
 
 exports.createProduct = async (data) => {
-    const modelData = mapToModel(data);
+    const { name, description, price, platform: platformSlug, genre: genreSlug, type,
+        releaseDate, developer, imageId, trailerUrl, stock, active, specPreset,
+        requirements, discountPercentage, discountEndDate } = data;
 
-    // VALIDACIÓN CRÍTICA: Verificar que Platform y Genre existan y estén activos
-    const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
-    if (!platform) {
-        throw new ErrorResponse(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`, 400);
-    }
+    const platformRecord = await prisma.platform.findFirst({ where: { slug: platformSlug, activo: true } });
+    if (!platformRecord) throw new ErrorResponse(`Plataforma '${platformSlug}' no encontrada o inactiva`, 400);
 
-    const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
-    if (!genre) {
-        throw new ErrorResponse(`Género '${modelData.generoId}' no encontrado o inactivo`, 400);
-    }
+    const genreRecord = await prisma.genre.findFirst({ where: { slug: genreSlug, activo: true } });
+    if (!genreRecord) throw new ErrorResponse(`Género '${genreSlug}' no encontrado o inactivo`, 400);
 
-    // Auto-rank: Insert at top (smallest order - 1000)
-    const firstProduct = await Product.findOne().sort({ orden: 1 });
+    const firstProduct = await prisma.product.findFirst({ where: { activo: true }, orderBy: { orden: 'asc' } });
     const newOrder = firstProduct ? firstProduct.orden - 1000 : 0;
-    modelData.orden = newOrder;
 
-    // Force stock to 0 for Digital products; stock is derived from DigitalKeys
-    if (modelData.tipo === 'Digital') {
-        modelData.stock = 0;
+    const tipo = type === 'Physical' ? 'Fisico' : 'Digital';
+
+    // Normalize requirements to flat array for Prisma
+    const requirementsData = [];
+    if (requirements && typeof requirements === 'object') {
+        for (const [tipo_, specs] of Object.entries(requirements)) {
+            if (specs && typeof specs === 'object') {
+                for (const [key, value] of Object.entries(specs)) {
+                    if (value != null) requirementsData.push({ tipo: tipo_, key, value: String(value) });
+                }
+            }
+        }
     }
 
-    const product = await Product.create(modelData);
-
-    logger.info(`Producto creado exitosamente: ${product._id}`, {
-        nombre: modelData.nombre,
-        plataformaId: modelData.plataformaId,
-        generoId: modelData.generoId
+    const product = await prisma.product.create({
+        data: {
+            nombre: name,
+            descripcion: description,
+            precio: price,
+            platformId: platformRecord.id,
+            genreId: genreRecord.id,
+            tipo,
+            fechaLanzamiento: releaseDate ? new Date(releaseDate) : new Date(),
+            desarrollador: developer,
+            imagenUrl: imageId || 'https://placehold.co/600x400?text=No+Image',
+            trailerUrl: trailerUrl || null,
+            stock: tipo === 'Digital' ? 0 : (stock ?? 0),
+            activo: active !== undefined ? active : true,
+            specPreset: specPreset || null,
+            descuentoPorcentaje: discountPercentage ?? 0,
+            descuentoFechaFin: discountEndDate ? new Date(discountEndDate) : null,
+            orden: newOrder,
+            requirements: { create: requirementsData }
+        },
+        include: { ...PRODUCT_INCLUDE, requirements: true }
     });
 
-    // Recargar para poblar y devolver DTO completo
-    const populatedProduct = await Product.findById(product._id)
-        .populate('platformObj')
-        .populate('genreObj');
-
-    return toResponseDTO(populatedProduct);
+    logger.info(`Producto creado: ${product.id}`, { nombre: product.nombre });
+    return productToDTO(product);
 };
 
 exports.updateProduct = async (id, data) => {
-    const modelData = mapToModel(data);
+    const existing = await prisma.product.findUnique({
+        where: { id },
+        include: { platform: true, genre: true }
+    });
+    if (!existing) throw new ErrorResponse('Producto no encontrado', 404);
 
-    if (modelData.plataformaId) {
-        const platform = await Platform.findOne({ id: modelData.plataformaId, activo: true });
-        if (!platform) {
-            throw new ErrorResponse(`Plataforma '${modelData.plataformaId}' no encontrada o inactiva`, 400);
+    const updateData = {};
+
+    if (data.name !== undefined) updateData.nombre = data.name;
+    if (data.description !== undefined) updateData.descripcion = data.description;
+    if (data.price !== undefined) updateData.precio = data.price;
+    if (data.releaseDate !== undefined) updateData.fechaLanzamiento = new Date(data.releaseDate);
+    if (data.developer !== undefined) updateData.desarrollador = data.developer;
+    if (data.imageId !== undefined) updateData.imagenUrl = data.imageId;
+    if (data.trailerUrl !== undefined) updateData.trailerUrl = data.trailerUrl;
+    if (data.active !== undefined) updateData.activo = data.active;
+    if (data.specPreset !== undefined) updateData.specPreset = data.specPreset;
+    if (data.discountPercentage !== undefined) updateData.descuentoPorcentaje = data.discountPercentage;
+    if (data.discountEndDate !== undefined) updateData.descuentoFechaFin = data.discountEndDate ? new Date(data.discountEndDate) : null;
+
+    if (data.type !== undefined) {
+        updateData.tipo = data.type === 'Physical' ? 'Fisico' : 'Digital';
+    }
+
+    if (data.platform !== undefined) {
+        const p = await prisma.platform.findFirst({ where: { slug: data.platform, activo: true } });
+        if (!p) throw new ErrorResponse(`Plataforma '${data.platform}' no encontrada`, 400);
+        updateData.platformId = p.id;
+    }
+
+    if (data.genre !== undefined) {
+        const g = await prisma.genre.findFirst({ where: { slug: data.genre, activo: true } });
+        if (!g) throw new ErrorResponse(`Género '${data.genre}' no encontrado`, 400);
+        updateData.genreId = g.id;
+    }
+
+    // Digital products: don't update stock from input
+    const tipoFinal = updateData.tipo || existing.tipo;
+    if (tipoFinal !== 'Digital' && data.stock !== undefined) {
+        updateData.stock = data.stock;
+    }
+
+    // Update requirements if provided
+    if (data.requirements !== undefined) {
+        await prisma.productRequirement.deleteMany({ where: { productId: id } });
+        const reqs = [];
+        for (const [tipo_, specs] of Object.entries(data.requirements || {})) {
+            if (specs && typeof specs === 'object') {
+                for (const [key, value] of Object.entries(specs)) {
+                    if (value != null) reqs.push({ productId: id, tipo: tipo_, key, value: String(value) });
+                }
+            }
+        }
+        if (reqs.length > 0) {
+            await prisma.productRequirement.createMany({ data: reqs });
         }
     }
 
-    if (modelData.generoId) {
-        const genre = await Genre.findOne({ id: modelData.generoId, activo: true });
-        if (!genre) {
-            throw new ErrorResponse(`Género '${modelData.generoId}' no encontrado o inactivo`, 400);
-        }
-    }
+    const updated = await prisma.product.update({
+        where: { id },
+        data: updateData,
+        include: { ...PRODUCT_INCLUDE, requirements: true }
+    });
 
-    // Usamos findById + save() en vez de findByIdAndUpdate
-    // para que el pre-save hook genere los requisitos a partir del specPreset
-    const product = await Product.findById(id);
-    if (!product) {
-        throw new ErrorResponse('Producto no encontrado', 404);
-    }
-
-    // Force stock consistency: If product is digital, stock is managed via keys, ignore user input
-    if (product.tipo === 'Digital' || modelData.tipo === 'Digital') {
-        delete modelData.stock;
-    }
-
-    Object.assign(product, modelData);
-    await product.save();
-
-    await product.populate('platformObj');
-    await product.populate('genreObj');
-
-    return toResponseDTO(product);
+    return productToDTO(updated);
 };
 
 exports.deleteProduct = async (id) => {
-    const product = await Product.findByIdAndUpdate(id, { activo: false }, { new: true });
-    if (!product) {
-        throw new ErrorResponse('Producto no encontrado', 404);
-    }
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+    await prisma.product.update({ where: { id }, data: { activo: false } });
     return true;
 };
 
 exports.deleteProducts = async (ids) => {
-    const result = await Product.updateMany(
-        { _id: { $in: ids } },
-        { activo: false }
-    );
+    const result = await prisma.product.updateMany({
+        where: { id: { in: ids } },
+        data: { activo: false }
+    });
     return result;
 };
 
 exports.reorderProduct = async (id, newPosition) => {
-    // newPosition es el índice visual (1-based)
-    if (newPosition < 1) {
-        throw new ErrorResponse('Posición inválida', 400);
-    }
+    if (newPosition < 1) throw new ErrorResponse('Posición inválida', 400);
 
-    const product = await Product.findById(id);
-    if (!product) {
-        throw new ErrorResponse('Producto no encontrado', 404);
-    }
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+    if (!product.activo) throw new ErrorResponse('No se puede reordenar un producto inactivo', 400);
 
-    if (!product.activo) {
-        throw new ErrorResponse('No se puede reordenar un producto inactivo', 400);
-    }
+    const otherProducts = await prisma.product.findMany({
+        where: { id: { not: id }, activo: true },
+        orderBy: { orden: 'asc' }
+    });
 
-    // Obtenemos SOLO productos ACTIVOS (excluyendo el que movemos para simplificar cálculo de huecos)
-    const otherProducts = await Product.find({ _id: { $ne: id }, activo: true }).sort({ orden: 1 });
+    let targetIndex = Math.min(Math.max(0, newPosition - 1), otherProducts.length);
 
-    // Ajustar newPosition a índice de array (0-based) dentro de la lista de "otros"
-    // Si quiere ir a la pos 1 (index 0), se inserta antes del elemento 0 de otherProducts.
-    // Si quiere ir a pos 2 (index 1), se inserta entre elem 0 y 1.
-    // Math.min para no salirnos del rango
-    let targetIndex = Math.min(newPosition - 1, otherProducts.length);
-    targetIndex = Math.max(0, targetIndex); // Seguridad extra
-
-    // Identificar vecinos
     const prevProduct = targetIndex > 0 ? otherProducts[targetIndex - 1] : null;
     const nextProduct = targetIndex < otherProducts.length ? otherProducts[targetIndex] : null;
 
-    // Calcular valores de orden de los vecinos
-    // Si no hay previo, asumimos un valor bajo relativo al siguiente o 0
-    // Si no hay siguiente, asumimos un valor alto relativo al previo
+    if (!prevProduct && !nextProduct) {
+        await prisma.product.update({ where: { id }, data: { orden: 1000 } });
+        return true;
+    }
+
     let prevOrder = prevProduct ? prevProduct.orden : (nextProduct ? nextProduct.orden - 2000 : 0);
     let nextOrder = nextProduct ? nextProduct.orden : (prevProduct ? prevProduct.orden + 2000 : 2000);
-
-    // Caso Borde: Inicio de lista vacía o lógica inicial
-    if (!prevProduct && !nextProduct) {
-        // Solo había 1 producto (el que movemos). Su orden da igual, lo dejamos en 0 o 1000.
-        await Product.updateOne({ _id: id }, { orden: 1000 });
-        return true;
-    }
-
-    // CALCULO SENIOR: Promedio
     let newOrder = (prevOrder + nextOrder) / 2;
 
-    // Verificar colisión o precisión agotada (Gaps muy chicos)
-    // Usamos un umbral (epsilon) de 0.005 o simplemente si son iguales
     if (Math.abs(newOrder - prevOrder) < 0.005 || Math.abs(newOrder - nextOrder) < 0.005) {
-        // REBALANCEO NECESARIO
-        // Insertamos visualmente en el array y reescribimos todo con gaps limpios de 1000
         otherProducts.splice(targetIndex, 0, product);
-
-        const bulkOps = otherProducts.map((p, index) => ({
-            updateOne: {
-                filter: { _id: p._id },
-                update: { $set: { orden: (index + 1) * 1000 } }
-            }
-        }));
-
-        await Product.bulkWrite(bulkOps);
+        await Promise.all(otherProducts.map((p, index) =>
+            prisma.product.update({ where: { id: p.id }, data: { orden: (index + 1) * 1000 } })
+        ));
         return true;
     }
 
-    // UPDATE OPTIMIZADO: Solo tocamos 1 documento
-    await Product.updateOne({ _id: id }, { orden: newOrder });
+    await prisma.product.update({ where: { id }, data: { orden: newOrder } });
     return true;
 };

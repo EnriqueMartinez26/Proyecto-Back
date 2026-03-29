@@ -1,19 +1,22 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const cookieParser = require('cookie-parser');
-const mongoSanitize = require('express-mongo-sanitize');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const hpp = require('hpp');
-const connectDB = require('./config/database');
+const prisma = require('./lib/prisma');
 const errorHandler = require('./middlewares/errorHandler');
 const validateEnv = require('./middlewares/validateEnv');
 const logger = require('./utils/logger'); // Importar Winston
 
 dotenv.config();
 validateEnv();
-connectDB();
+
+// Connect to Supabase via Prisma on startup
+prisma.$connect()
+    .then(() => logger.info('✅ Conectado a Supabase (PostgreSQL via Prisma)'))
+    .catch(err => { logger.error('❌ Error conectando a Supabase:', err.message); process.exit(1); });
 
 const app = express();
 
@@ -43,7 +46,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(mongoSanitize());
+// Note: mongoSanitize removed (no longer needed with Prisma/PostgreSQL)
 app.use(compression());
 app.use(hpp());
 
@@ -140,12 +143,14 @@ if (process.env.NODE_ENV !== 'production' || process.env.RENDER) {
     logger.info(`🛡️  Seguridad Activada (Helmet + RateLimit)`);
     logger.info(`✅ Servidor corriendo en puerto ${PORT}`);
     logger.info(`🌍 Modo: ${process.env.NODE_ENV}`);
+    logger.info(`🗄️  Base de datos: Supabase (PostgreSQL + Prisma)`);
   });
 
   // Graceful shutdown (Render envía SIGTERM al redeploy)
   process.on('SIGTERM', () => {
     logger.info('🛑 SIGTERM recibido. Cerrando servidor...');
-    server.close(() => {
+    server.close(async () => {
+      await prisma.$disconnect();
       logger.info('✅ Servidor cerrado limpiamente.');
       process.exit(0);
     });

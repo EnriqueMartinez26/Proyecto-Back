@@ -1,11 +1,11 @@
-const Genre = require('../models/Genre');
+const prisma = require('../lib/prisma');
 const createMetadataService = require('./metadataService');
 
-const service = createMetadataService(Genre, {
+const service = createMetadataService('genre', {
     singular: 'género',
     plural: 'géneros',
     notFoundMsg: 'Género no encontrado',
-    productField: 'generoId',
+    productField: 'genreId',
 });
 
 exports.getGenres = service.getAll.bind(service);

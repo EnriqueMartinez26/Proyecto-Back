@@ -1,43 +1,55 @@
-const Wishlist = require('../models/Wishlist');
-const ProductService = require('../services/productService');
+const prisma = require('../lib/prisma');
+const ProductService = require('./productService');
 const logger = require('../utils/logger');
 
 exports.getWishlistByUser = async (userId) => {
-    let wishlist = await Wishlist.findOne({ usuarioId: userId })
-        .populate({
-            path: 'productos.productoId',
-            populate: [
-                { path: 'platformObj' },
-                { path: 'genreObj' }
-            ]
-        });
+    const wishlist = await prisma.wishlist.findUnique({
+        where: { userId },
+        include: {
+            items: {
+                include: {
+                    product: {
+                        include: {
+                            platform: true,
+                            genre: true,
+                            requirements: true
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     if (!wishlist) return [];
 
-    const productos = wishlist.productos
-        .filter(item => item.productoId)
-        .map(item => ProductService.transformDTO(item.productoId));
+    const productos = wishlist.items
+        .filter(item => item.product)
+        .map(item => ProductService.transformDTO(item.product));
 
     logger.info(`Wishlist obtenida para usuario: ${userId}`);
     return productos;
 };
 
 exports.toggleWishlist = async (userId, productId) => {
-    let wishlist = await Wishlist.findOne({ usuarioId: userId });
+    let wishlist = await prisma.wishlist.findUnique({
+        where: { userId },
+        include: { items: true }
+    });
 
     if (!wishlist) {
-        wishlist = await Wishlist.create({ usuarioId: userId, productos: [{ productoId: productId }] });
+        await prisma.wishlist.create({
+            data: { userId, items: { create: [{ productId }] } }
+        });
         logger.info(`Wishlist creada y producto agregado: ${userId}`);
     } else {
-        const idx = wishlist.productos.findIndex(p => p.productoId.toString() === productId);
-        if (idx > -1) {
-            wishlist.productos.splice(idx, 1);
+        const existingItem = wishlist.items.find(i => i.productId === productId);
+        if (existingItem) {
+            await prisma.wishlistItem.delete({ where: { id: existingItem.id } });
             logger.info(`Producto removido de wishlist: ${userId}`);
         } else {
-            wishlist.productos.push({ productoId: productId });
+            await prisma.wishlistItem.create({ data: { wishlistId: wishlist.id, productId } });
             logger.info(`Producto agregado a wishlist: ${userId}`);
         }
-        await wishlist.save();
     }
 
     return true;
