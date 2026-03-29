@@ -2,7 +2,7 @@ const logger = require('../utils/logger');
 
 const validateEnv = () => {
   // Variables críticas — sin estas la app no puede arrancar
-  const criticalVars = ['MONGODB_URI', 'JWT_SECRET', 'FRONTEND_URL'];
+  const criticalVars = ['DATABASE_URL', 'JWT_SECRET', 'FRONTEND_URL'];
 
   const missingCritical = criticalVars.filter((v) => !process.env[v]);
   if (missingCritical.length > 0) {
