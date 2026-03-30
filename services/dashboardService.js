@@ -9,7 +9,7 @@ class DashboardService {
 
         const [paidOrders, totalUsers, allProducts, recentMonthOrders] = await Promise.all([
             prisma.order.findMany({ where: { isPaid: true }, select: { totalPrice: true } }),
-            prisma.user.count({ where: { role: 'user' } }),
+            prisma.user.count(),
             prisma.product.findMany({ select: { activo: true, stock: true } }),
             prisma.order.findMany({
                 where: { isPaid: true, createdAt: { gte: firstDayLastMonth } },
