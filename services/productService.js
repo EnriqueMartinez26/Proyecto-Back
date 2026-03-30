@@ -238,9 +238,8 @@ exports.updateProduct = async (id, data) => {
         updateData.genreId = g.id;
     }
 
-    // Digital products: don't update stock from input
-    const tipoFinal = updateData.tipo || existing.tipo;
-    if (tipoFinal !== 'Digital' && data.stock !== undefined) {
+    // Allow stock updates for all product types
+    if (data.stock !== undefined) {
         updateData.stock = data.stock;
     }
 
