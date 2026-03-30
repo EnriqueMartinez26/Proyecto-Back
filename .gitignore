@@ -4,6 +4,7 @@ jspm_packages/
 
 # Entorno
 .env
+.env.test
 .env.local
 .env.development.local
 .env.test.local
@@ -46,3 +47,5 @@ test-results/
 inactivos_reporte.json
 analisis_completo.json
 scripts/archive/
+
+/generated/prisma

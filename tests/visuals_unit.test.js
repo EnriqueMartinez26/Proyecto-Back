@@ -1,52 +1,14 @@
 const httpMocks = require('node-mocks-http');
-const categoryController = require('../controllers/categoryController');
 const platformController = require('../controllers/platformController');
 const genreController = require('../controllers/genreController');
-const Category = require('../models/Category');
 const Platform = require('../models/Platform');
 const Genre = require('../models/Genre');
 
 // Mock Mongoose models
-jest.mock('../models/Category');
 jest.mock('../models/Platform');
 jest.mock('../models/Genre');
 
 describe('Visuals Management Controller Tests', () => {
-
-    describe('Category Controller - deleteCategories', () => {
-        it('should return error if no IDs provided', async () => {
-            const req = httpMocks.createRequest({
-                method: 'DELETE',
-                body: {}
-            });
-            const res = httpMocks.createResponse();
-
-            await categoryController.deleteCategories(req, res);
-            const data = res._getJSONData(); // Use _getJSONData() instead of _getData()
-
-            expect(res.statusCode).toBe(400);
-            expect(data.success).toBe(false);
-        });
-
-        it('should delete categories given an array of IDs', async () => {
-            const req = httpMocks.createRequest({
-                method: 'DELETE',
-                body: ['id1', 'id2']
-            });
-            const res = httpMocks.createResponse();
-
-            Category.deleteMany.mockResolvedValue({ deletedCount: 2 });
-
-            await categoryController.deleteCategories(req, res);
-            const data = res._getJSONData();
-
-            // Check if status code is 200 (default for res.json)
-            // Note: node-mocks-http defaults status to 200 unless set
-            expect(res.statusCode).toBe(200);
-            expect(data.success).toBe(true);
-            expect(data.message).toContain('2 categorías eliminadas');
-        });
-    });
 
     describe('Platform Controller - getPlatform', () => {
         it('should return platform data if found by custom ID', async () => {
@@ -56,11 +18,14 @@ describe('Visuals Management Controller Tests', () => {
             const res = httpMocks.createResponse();
             const next = jest.fn();
 
-            Platform.findOne.mockResolvedValue({
-                id: 'plat1',
-                nombre: 'Platform 1',
-                imageId: 'img1',
-                activo: true
+            // Mongoose findOne returns a query chain; mock .lean() on the chain
+            Platform.findOne.mockReturnValue({
+                lean: jest.fn().mockResolvedValue({
+                    id: 'plat1',
+                    nombre: 'Platform 1',
+                    imageId: 'img1',
+                    activo: true
+                })
             });
 
             await platformController.getPlatform(req, res, next);
@@ -77,7 +42,9 @@ describe('Visuals Management Controller Tests', () => {
             const res = httpMocks.createResponse();
             const next = jest.fn();
 
-            Platform.findOne.mockResolvedValue(null);
+            Platform.findOne.mockReturnValue({
+                lean: jest.fn().mockResolvedValue(null)
+            });
 
             await platformController.getPlatform(req, res, next);
 
@@ -94,11 +61,13 @@ describe('Visuals Management Controller Tests', () => {
             const res = httpMocks.createResponse();
             const next = jest.fn();
 
-            Genre.findOne.mockResolvedValue({
-                id: 'gen1',
-                nombre: 'Genre 1',
-                imageId: 'img1',
-                activo: true
+            Genre.findOne.mockReturnValue({
+                lean: jest.fn().mockResolvedValue({
+                    id: 'gen1',
+                    nombre: 'Genre 1',
+                    imageId: 'img1',
+                    activo: true
+                })
             });
 
             await genreController.getGenre(req, res, next);

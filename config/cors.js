@@ -9,22 +9,22 @@ const corsOptions = {
             'http://localhost:3000',
             'https://4funstore-vercel.vercel.app',
             process.env.FRONTEND_URL
-        ];
+        ].filter(Boolean);
 
-        // Permitir cualquier subdominio de vercel que contenga tu proyecto
-        const isAllowedVercel = origin.includes('vercel.app') && origin.includes('4funstore');
+        // Permitir previews dinámicos de Vercel (subdominios legítimos: 4funstore-<hash>.vercel.app)
+        const isAllowedVercel = /^https:\/\/4funstore(-[a-z0-9]+)*\.vercel\.app$/.test(origin);
 
-        if (allowedOrigins.indexOf(origin) !== -1 || isAllowedVercel) {
+        if (allowedOrigins.includes(origin) || isAllowedVercel) {
             callback(null, true);
         } else {
-            // IMPORTANTE: No lances Error, mejor loguea y rechaza silenciosamente para evitar crasheos
+            // Nota: Se rechaza silenciosamente registrando el log en lugar de lanzar una excepción para evitar caídas de la aplicación por bots.
             logger.warn(`CORS rejected for origin: ${origin}`);
             callback(null, false);
         }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning']
+    allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 module.exports = cors(corsOptions);

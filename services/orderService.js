@@ -1,309 +1,242 @@
-const Order = require('../models/Order');
-const Product = require('../models/Product');
-const DigitalKey = require('../models/DigitalKey');
-const EmailService = require('./emailService'); // Importar EmailService
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago');
-const crypto = require('crypto');
+const prisma = require('../lib/prisma');
+const mpService = require('./mercadoPagoService');
+const EmailService = require('./emailService');
+const { DEFAULT_IMAGE } = require('../utils/constants');
 const logger = require('../utils/logger');
 const ErrorResponse = require('../utils/errorResponse');
 
-let mpClient = null;
-const getMpClient = () => {
-  if (!mpClient) {
-    if (!process.env.MERCADOPAGO_ACCESS_TOKEN) {
-      throw new Error("FATAL: MERCADOPAGO_ACCESS_TOKEN no configurado.");
-    }
-    mpClient = new MercadoPagoConfig({
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
-      options: { timeout: 5000 }
-    });
-  }
-  return mpClient;
-};
-
 class OrderService {
-  async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
-    if (!orderItems?.length) throw new ErrorResponse('El carrito está vacío.', 400);
 
-    // 1. Validaciones
-    let calculatedTotal = 0;
-    const validatedItems = [];
+    async createOrder({ user, orderItems, shippingAddress, paymentMethod }) {
+        if (!orderItems?.length) throw new ErrorResponse('El carrito está vacío.', 400);
 
-    for (const item of orderItems) {
-      const product = await Product.findById(item.product);
-      if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
-      if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
+        const backendUrl = process.env.BACKEND_URL;
+        if (!backendUrl) throw new ErrorResponse('BACKEND_URL no está configurado.', 500);
 
-      // STOCK CHECK CRÍTICO (Fase 1)
-      if (product.tipo === 'Digital') {
-        const realStock = await DigitalKey.countDocuments({ productoId: item.product, estado: 'DISPONIBLE' });
-        if (realStock < item.quantity) {
-          throw new ErrorResponse(`Stock insuficiente de keys para: ${product.nombre} (Disponibles: ${realStock})`, 400);
-        }
-      } else {
-        // Fisico
-        if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente: ${product.nombre}`, 400);
-      }
+        let calculatedTotal = 0;
+        const validatedItems = [];
 
-      calculatedTotal += product.precio * item.quantity;
+        for (const item of orderItems) {
+            const product = await prisma.product.findUnique({ where: { id: item.product } });
+            if (!product) throw new ErrorResponse(`Producto no encontrado: ${item.name}`, 400);
 
-      validatedItems.push({
-        id: item.product.toString(),
-        title: item.name,
-        quantity: Number(item.quantity),
-        unit_price: Number(product.precio),
-        currency_id: 'ARS',
-        picture_url: item.image,
-        description: product.descripcion?.substring(0, 200)
-      });
-    }
-
-    // 2. Reserva de Stock
-    for (const item of validatedItems) {
-      await Product.findByIdAndUpdate(item.id, {
-        $inc: { stock: -item.quantity, cantidadVendida: item.quantity }
-      });
-    }
-
-    // 3. Crear Orden Local
-    const order = await Order.create({
-      user,
-      orderItems: validatedItems.map(i => ({ ...i, product: i.id, name: i.title, price: i.unit_price })),
-      shippingAddress,
-      paymentMethod,
-      itemsPrice: calculatedTotal,
-      totalPrice: calculatedTotal,
-      orderStatus: 'pending',
-      isPaid: false
-    });
-
-    // 4. Preferencia MP (Checkout Pro)
-    try {
-      const client = getMpClient();
-      const preference = new Preference(client);
-
-      const backendUrl = process.env.BACKEND_URL;
-      if (!backendUrl) throw new Error("BACKEND_URL (Ngrok) es requerida en .env");
-
-      const preferenceData = {
-        body: {
-          items: validatedItems,
-          back_urls: {
-            success: `${backendUrl}/api/orders/feedback?status=approved`,
-            failure: `${backendUrl}/api/orders/feedback?status=failure`,
-            pending: `${backendUrl}/api/orders/feedback?status=pending`
-          },
-          auto_return: 'approved',
-          external_reference: order._id.toString(),
-          statement_descriptor: "4FUN",
-          notification_url: `${backendUrl}/api/orders/webhook`,
-          expires: true,
-          expiration_date_to: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-        }
-      };
-
-      const mpResponse = await preference.create(preferenceData);
-
-      order.externalId = mpResponse.id;
-      await order.save();
-
-      // --- CONFIGURACIÓN DE ENTORNO ---
-      // En modo desarrollo, utilizamos el sandbox_init_point para permitir pruebas
-      const link = process.env.NODE_ENV === 'production'
-        ? mpResponse.init_point
-        : mpResponse.sandbox_init_point;
-
-      return {
-        orderId: order._id,
-        paymentLink: link,
-        order
-      };
-
-    } catch (error) {
-      // Rollback
-      for (const item of validatedItems) {
-        await Product.findByIdAndUpdate(item.id, { $inc: { stock: item.quantity } });
-      }
-      await Order.findByIdAndDelete(order._id);
-      throw new Error(`Error Mercado Pago: ${error.message}`);
-    }
-  }
-
-  // Obtener órdenes de usuario con lógica de negocio (Claves, Imágenes)
-  async getUserOrders(userId) {
-    const orders = await Order.find({ user: userId })
-      .sort({ createdAt: -1 })
-      .lean();
-
-    const { DEFAULT_IMAGE } = require('../utils/constants');
-
-    // Adjuntar claves digitales si la orden está pagada y asegurar imagenes
-    const enrichedOrders = await Promise.all(orders.map(async (order) => {
-      // Ensure items have images
-      if (order.orderItems) {
-        order.orderItems = order.orderItems.map(item => ({
-          ...item,
-          image: item.image || DEFAULT_IMAGE
-        }));
-      }
-
-      if (order.isPaid) {
-        const keys = await DigitalKey.find({ pedidoId: order._id })
-          .select('clave productoId')
-          .lean();
-        return { ...order, digitalKeys: keys };
-      }
-      return order;
-    }));
-
-    return enrichedOrders;
-  }
-
-  // Webhook Handler
-  async handleWebhook(headers, body, query) {
-    const xSignature = headers['x-signature'];
-    const dataId = body?.data?.id || query['data.id'];
-    const type = body?.type || query.type;
-
-    if (type !== 'payment') return { status: 'ignored' };
-    if (!dataId) throw new Error('Missing payment ID');
-
-    // Validación de Firma
-    if (process.env.MERCADOPAGO_WEBHOOK_SECRET && xSignature) {
-      const parts = xSignature.split(',');
-      let ts, QH;
-      parts.forEach(p => {
-        const [k, v] = p.split('=');
-        if (k === 'ts') ts = v;
-        if (k === 'v1') QH = v;
-      });
-      const manifest = `id:${dataId};request-id:${headers['x-request-id']};ts:${ts};`;
-      const hmac = crypto.createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET);
-      const digest = hmac.update(manifest).digest('hex');
-      if (QH !== digest) logger.warn('⚠️ Firma de webhook inválida (continuando en dev)');
-    }
-
-    const client = getMpClient();
-    const payment = new Payment(client);
-    const paymentInfo = await payment.get({ id: dataId });
-
-    if (!paymentInfo) throw new Error('Pago no encontrado');
-
-    const order = await Order.findById(paymentInfo.external_reference)
-      .populate('orderItems.product');
-
-    if (!order) throw new Error('Orden no encontrada');
-    if (order.orderStatus === 'pagado') return { status: 'ok' };
-
-    if (paymentInfo.status === 'approved') {
-      order.isPaid = true;
-      order.paidAt = new Date();
-      order.orderStatus = 'processing';
-      order.paymentResult = { id: String(paymentInfo.id), status: 'approved', email: paymentInfo.payer?.email };
-
-      // Entrega de Claves
-      logger.info(`📦 Procesando entrega digital para orden ${order._id}...`);
-      const deliveredKeys = []; // Acumulador para email
-      for (const item of order.orderItems) {
-        if (item.product && item.product.tipo === 'Digital') {
-          for (let i = 0; i < item.quantity; i++) {
-            const key = await DigitalKey.findOneAndUpdate(
-              { productoId: item.product._id, estado: 'DISPONIBLE' },
-              { estado: 'VENDIDA', pedidoId: order._id, fechaVenta: new Date() },
-              { new: true }
-            );
-            if (key) {
-              logger.info(`🔑 Clave asignada: ${key.clave}`);
-              deliveredKeys.push({ productName: item.product.nombre, key: key.clave });
+            if (product.tipo === 'Digital') {
+                const availableKeys = await prisma.digitalKey.count({
+                    where: { productId: item.product, estado: 'DISPONIBLE' }
+                });
+                if (availableKeys < item.quantity) {
+                    throw new ErrorResponse(`Stock insuficiente de keys para: ${product.nombre} (Disponibles: ${availableKeys})`, 400);
+                }
             } else {
-              logger.error(`⚠️ SIN STOCK DIGITAL para: ${item.product.nombre}`);
+                if (product.stock < item.quantity) throw new ErrorResponse(`Stock insuficiente para: ${product.nombre}`, 400);
             }
-          }
-        }
-      }
 
-      // Enviar Email con Keys (Phase 1)
-      if (deliveredKeys.length > 0) {
+            calculatedTotal += Number(product.precio) * item.quantity;
+            validatedItems.push({
+                id: product.id,
+                title: item.name,
+                quantity: Number(item.quantity),
+                unit_price: Number(product.precio),
+                currency_id: 'ARS',
+                picture_url: item.image || undefined,
+                description: product.descripcion?.substring(0, 200) || '',
+                tipo: product.tipo
+            });
+        }
+
+        // Reserve stock atomically
+        for (const item of validatedItems) {
+            if (item.tipo !== 'Digital') {
+                const updated = await prisma.product.updateMany({
+                    where: { id: item.id, stock: { gte: item.quantity } },
+                    data: { stock: { decrement: item.quantity }, cantidadVendida: { increment: item.quantity } }
+                });
+                if (updated.count === 0) {
+                    // Rollback
+                    for (const prev of validatedItems) {
+                        if (prev.id === item.id) break;
+                        await prisma.product.update({ where: { id: prev.id }, data: { stock: { increment: prev.quantity }, cantidadVendida: { decrement: prev.quantity } } });
+                    }
+                    throw new ErrorResponse(`Stock agotado para: ${item.title}.`, 409);
+                }
+            }
+        }
+
+        // Create order
+        const order = await prisma.order.create({
+            data: {
+                userId: user.id || user._id?.toString() || user,
+                paymentMethod: paymentMethod || 'mercadopago',
+                itemsPrice: calculatedTotal,
+                shippingPrice: 0,
+                totalPrice: calculatedTotal,
+                orderStatus: 'pending',
+                isPaid: false,
+                shippingAddress: shippingAddress ? { create: shippingAddress } : undefined,
+                orderItems: {
+                    create: validatedItems.map(i => ({
+                        productId: i.id,
+                        name: i.title,
+                        quantity: i.quantity,
+                        price: i.unit_price,
+                        image: i.picture_url || ''
+                    }))
+                }
+            }
+        });
+
         try {
-          const user = await require('../models/User').findById(order.user);
-          if (user) {
-            await EmailService.sendDigitalProductDelivery(user, order, deliveredKeys);
-            logger.info(`📧 Email de claves enviado a ${user.email}`);
-          }
-        } catch (emailError) {
-          logger.error('Error enviando email de claves:', emailError);
+            const mpResponse = await mpService.createPreference(order.id, validatedItems, backendUrl, user);
+            await prisma.order.update({ where: { id: order.id }, data: { externalId: mpResponse.id } });
+            logger.info(`Orden ${order.id} creada. Link de pago generado.`);
+            return { orderId: order.id, paymentLink: mpResponse.paymentLink, order: { ...order, _id: order.id } };
+        } catch (mpError) {
+            logger.error(`Error al crear preferencia MP para orden ${order.id}. Rollback.`, { error: mpError.message });
+            for (const item of validatedItems) {
+                if (item.tipo !== 'Digital') {
+                    await prisma.product.update({ where: { id: item.id }, data: { stock: { increment: item.quantity } } });
+                }
+            }
+            await prisma.order.delete({ where: { id: order.id } });
+            throw new ErrorResponse(`Error al conectar con Mercado Pago: ${mpError.message}`, 502);
         }
-      }
-
-      await order.save();
     }
 
-    return { status: 'ok', state: paymentInfo.status };
-  }
+    async handleWebhook(headers, body, query) {
+        const dataId = body?.data?.id || query['data.id'];
+        const type = body?.type || query.type;
 
-  // Obtener orden por ID con validación de permisos
-  async getOrderById(orderId, userId, userRole) {
-    const order = await Order.findById(orderId)
-      .populate('user', 'name email')
-      .populate('orderItems.product', 'name price');
+        if (type !== 'payment') return { status: 'ignored', reason: 'Tipo de notificación no es payment' };
+        if (!dataId) throw new Error('Missing payment ID en el webhook');
 
-    if (!order) {
-      throw new ErrorResponse('Orden no encontrada', 404);
+        mpService.validateWebhookSignature(headers, dataId);
+
+        let paymentInfo;
+        try { paymentInfo = await mpService.getPayment(dataId); }
+        catch (err) { throw new Error(`No se pudo obtener el pago ${dataId}: ${err.message}`); }
+
+        if (!paymentInfo) throw new Error('Pago no encontrado en MercadoPago');
+
+        const order = await prisma.order.findUnique({
+            where: { id: paymentInfo.external_reference },
+            include: { orderItems: { include: { product: true } } }
+        });
+        if (!order) throw new Error('Orden no encontrada');
+        if (order.isPaid) return { status: 'ok', reason: 'Orden ya procesada anteriormente' };
+
+        if (paymentInfo.status === 'approved') {
+            const deliveredKeys = [];
+            for (const item of order.orderItems) {
+                if (item.product?.tipo === 'Digital') {
+                    for (let i = 0; i < item.quantity; i++) {
+                        const key = await prisma.digitalKey.findFirst({
+                            where: { productId: item.productId, estado: 'DISPONIBLE' }
+                        });
+                        if (key) {
+                            await prisma.digitalKey.update({
+                                where: { id: key.id },
+                                data: { estado: 'VENDIDA', orderId: order.id, fechaVenta: new Date() }
+                            });
+                            deliveredKeys.push({ productName: item.product.nombre, key: key.clave });
+                        }
+                    }
+                }
+            }
+
+            await prisma.order.update({
+                where: { id: order.id },
+                data: {
+                    isPaid: true, paidAt: new Date(), orderStatus: 'processing',
+                    mpPaymentId: String(paymentInfo.id),
+                    mpStatus: 'approved',
+                    mpPaymentType: paymentInfo.payment_type_id || '',
+                    mpEmail: paymentInfo.payer?.email || ''
+                }
+            });
+
+            if (deliveredKeys.length > 0) {
+                try {
+                    const userData = await prisma.user.findUnique({ where: { id: order.userId } });
+                    if (userData) await EmailService.sendDigitalProductDelivery(userData, { ...order, _id: order.id }, deliveredKeys);
+                } catch (emailError) {
+                    logger.error('Error al enviar email de claves:', emailError.message);
+                }
+            }
+            logger.info(`Orden ${order.id} marcada como pagada.`);
+        }
+
+        return { status: 'ok', paymentStatus: paymentInfo.status };
     }
 
-    // Validar acceso: Solo admin o dueño de la orden
-    if (order.user._id.toString() !== userId && userRole !== 'admin') {
-      throw new ErrorResponse('No autorizado para ver esta orden', 403);
+    async getUserOrders(userId) {
+        const orders = await prisma.order.findMany({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+            include: { orderItems: true, shippingAddress: true, digitalKeys: { select: { id: true, clave: true, productId: true } } }
+        });
+
+        return orders.map(o => ({
+            ...o,
+            _id: o.id,
+            orderItems: (o.orderItems || []).map(i => ({ ...i, _id: i.id, image: i.image || DEFAULT_IMAGE }))
+        }));
     }
 
-    return order;
-  }
+    async getOrderById(orderId, userId, userRole) {
+        const order = await prisma.order.findUnique({
+            where: { id: orderId },
+            include: { user: { select: { id: true, name: true, email: true } }, orderItems: true, shippingAddress: true }
+        });
+        if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        if (order.userId !== userId && userRole !== 'admin') throw new ErrorResponse('No autorizado para ver esta orden', 403);
+        return { ...order, _id: order.id };
+    }
 
-  // Listar órdenes (Admin) con filtros y paginación
-  async getAllOrders({ page = 1, limit = 10, status, userId }) {
-    const filter = {};
-    if (status) filter.orderStatus = status;
-    if (userId) filter.user = userId;
+    async getAllOrders({ page = 1, limit = 10, status, userId } = {}) {
+        const where = {};
+        if (status) where.orderStatus = status;
+        if (userId) where.userId = userId;
 
-    const pageNum = Math.max(1, Number(page));
-    const limitNum = Math.max(1, Number(limit));
+        const pageNum = Math.max(1, Number(page));
+        const limitNum = Math.max(1, Number(limit));
 
-    const orders = await Order.find(filter)
-      .populate('user', 'name email')
-      .sort({ createdAt: -1 })
-      .skip((pageNum - 1) * limitNum)
-      .limit(limitNum)
-      .lean();
+        const [orders, total] = await Promise.all([
+            prisma.order.findMany({
+                where,
+                include: {
+                    user: { select: { id: true, name: true, email: true } },
+                    orderItems: true,
+                    shippingAddress: true
+                },
+                orderBy: { createdAt: 'desc' },
+                skip: (pageNum - 1) * limitNum,
+                take: limitNum
+            }),
+            prisma.order.count({ where })
+        ]);
 
-    const count = await Order.countDocuments(filter);
+        return {
+            count: orders.length,
+            total,
+            page: pageNum,
+            totalPages: Math.ceil(total / limitNum),
+            orders: orders.map(o => ({ ...o, _id: o.id }))
+        };
+    }
 
-    return {
-      count: orders.length,
-      total: count,
-      page: pageNum,
-      totalPages: Math.ceil(count / limitNum),
-      orders
-    };
-  }
+    async updateOrderStatus(orderId, status) {
+        const order = await prisma.order.findUnique({ where: { id: orderId } });
+        if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        const updated = await prisma.order.update({ where: { id: orderId }, data: { orderStatus: status } });
+        return { ...updated, _id: updated.id };
+    }
 
-  async updateOrderStatus(orderId, status) {
-    const order = await Order.findById(orderId);
-    if (!order) throw new ErrorResponse('Orden no encontrada', 404);
-
-    order.orderStatus = status;
-    await order.save();
-    return order;
-  }
-
-  async updateOrderToPaid(orderId) {
-    const order = await Order.findById(orderId);
-    if (!order) throw new ErrorResponse('Orden no encontrada', 404);
-
-    order.isPaid = true;
-    order.paidAt = Date.now();
-    await order.save();
-    return order;
-  }
+    async updateOrderToPaid(orderId) {
+        const order = await prisma.order.findUnique({ where: { id: orderId } });
+        if (!order) throw new ErrorResponse('Orden no encontrada', 404);
+        const updated = await prisma.order.update({ where: { id: orderId }, data: { isPaid: true, paidAt: new Date() } });
+        return { ...updated, _id: updated.id };
+    }
 }
 
 module.exports = new OrderService();

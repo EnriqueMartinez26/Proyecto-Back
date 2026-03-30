@@ -1,4 +1,6 @@
 const ProductService = require('../services/productService');
+const ErrorResponse = require('../utils/errorResponse');
+const parseBulkIds = require('../utils/parseBulkIds');
 
 exports.getProducts = async (req, res, next) => {
   try {
@@ -58,9 +60,7 @@ exports.reorderProduct = async (req, res, next) => {
     const { newPosition } = req.body;
 
     if (newPosition === undefined || typeof newPosition !== 'number') {
-      const error = new Error('Posición inválida, se requiere un número');
-      error.statusCode = 400;
-      throw error;
+      throw new ErrorResponse('Posición inválida, se requiere un número', 400);
     }
 
     const success = await ProductService.reorderProduct(id, newPosition);
@@ -86,22 +86,10 @@ exports.deleteProduct = async (req, res, next) => {
 
 exports.deleteProducts = async (req, res, next) => {
   try {
-    let ids = [];
-
-    if (Array.isArray(req.body) && req.body.length > 0) {
-      ids = req.body;
-    } else if (req.body.ids && Array.isArray(req.body.ids)) {
-      ids = req.body.ids;
-    } else if (req.query.ids) {
-      ids = Array.isArray(req.query.ids)
-        ? req.query.ids
-        : req.query.ids.split(',').filter(Boolean);
-    }
+    const ids = parseBulkIds(req);
 
     if (!ids || ids.length === 0) {
-      const error = new Error('No se proporcionaron IDs para eliminar');
-      error.statusCode = 400;
-      throw error;
+      throw new ErrorResponse('No se proporcionaron IDs para eliminar', 400);
     }
 
     const result = await ProductService.deleteProducts(ids);

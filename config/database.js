@@ -4,8 +4,6 @@ const logger = require('../utils/logger');
 const connectDB = async () => {
   try {
     const options = {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     };
@@ -27,7 +25,12 @@ const connectDB = async () => {
       logger.error('💡 Verifica que tu IP esté en la lista blanca de MongoDB Atlas');
     }
 
-    process.exit(1);
+    // En Vercel matar el proceso (process.exit) genera FUNCTION_INVOCATION_FAILED y oculta el log completo
+    if (process.env.NODE_ENV !== 'production') {
+      process.exit(1);
+    } else {
+      throw error;
+    }
   }
 };
 

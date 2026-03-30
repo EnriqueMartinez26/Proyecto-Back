@@ -1,141 +1,107 @@
-const Cart = require('../models/Cart');
-const Product = require('../models/Product');
-const ProductService = require('../services/productService');
+const prisma = require('../lib/prisma');
+const ProductService = require('./productService');
+const ErrorResponse = require('../utils/errorResponse');
 const logger = require('../utils/logger');
 
-const PRODUCT_FIELDS = 'nombre precio imagenUrl stock plataformaId generoId tipo descripcion desarrollador fechaLanzamiento calificacion activo';
-
-// Helper for unified DTO
+// Helper: fetch cart with populated products and return DTO
 async function getCartWithDTO(userId) {
-    const cart = await Cart.findOne({ user: userId })
-        .populate({
-            path: 'items.product',
-            select: PRODUCT_FIELDS,
-            populate: [
-                { path: 'plataformaId', select: 'nombre' },
-                { path: 'generoId', select: 'nombre' }
-            ]
-        });
+    const cart = await prisma.cart.findUnique({
+        where: { userId },
+        include: {
+            items: {
+                include: {
+                    product: {
+                        include: {
+                            platform: true,
+                            genre: true,
+                            requirements: true
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     if (!cart) return { items: [] };
 
-    const transformedItems = cart.items.map(item => {
-        if (!item.product) return item;
-        const productDTO = ProductService.transformDTO(item.product);
-        const itemObj = item.toObject ? item.toObject() : item;
-        return { ...itemObj, product: productDTO };
-    });
+    const transformedItems = cart.items.map(item => ({
+        _id: item.id,
+        id: item.id,
+        quantity: item.quantity,
+        product: ProductService.transformDTO(item.product)
+    }));
 
-    const cartResponse = cart.toObject ? cart.toObject() : cart;
-    cartResponse.items = transformedItems;
-    return cartResponse;
+    return { ...cart, _id: cart.id, items: transformedItems };
 }
 
-exports.getCart = async (userId) => {
-    return await getCartWithDTO(userId);
-};
+exports.getCart = async (userId) => getCartWithDTO(userId);
 
 exports.addToCart = async (userId, productId, quantity) => {
-    // Validar que el producto existe, está activo y tiene stock
-    const product = await Product.findById(productId);
-    if (!product) {
-        const error = new Error('Producto no encontrado');
-        error.statusCode = 404;
-        throw error;
-    }
-    if (!product.activo) {
-        const error = new Error('Este producto ya no está disponible');
-        error.statusCode = 400;
-        throw error;
-    }
+    const product = await prisma.product.findUnique({ where: { id: productId } });
+    if (!product) throw new ErrorResponse('Producto no encontrado', 404);
+    if (!product.activo) throw new ErrorResponse('Este producto ya no está disponible', 400);
 
-    // Verificar stock considerando cantidad ya en carrito
-    let cart = await Cart.findOne({ user: userId });
-    let currentQuantityInCart = 0;
+    let cart = await prisma.cart.findUnique({
+        where: { userId },
+        include: { items: true }
+    });
+
+    let currentQty = 0;
     if (cart) {
-        const existingItem = cart.items.find(p => p.product.toString() === productId);
-        if (existingItem) {
-            currentQuantityInCart = existingItem.quantity;
-        }
+        const existingItem = cart.items.find(i => i.productId === productId);
+        if (existingItem) currentQty = existingItem.quantity;
     }
 
-    const totalRequested = currentQuantityInCart + quantity;
-    if (product.stock < totalRequested) {
-        const error = new Error(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQuantityInCart}`);
-        error.statusCode = 400;
-        throw error;
+    if (product.stock < currentQty + quantity) {
+        throw new ErrorResponse(`Stock insuficiente. Disponible: ${product.stock}, en carrito: ${currentQty}`, 400);
     }
 
     if (!cart) {
-        cart = await Cart.create({
-            user: userId,
-            items: [{ product: productId, quantity }]
+        await prisma.cart.create({
+            data: { userId, items: { create: [{ productId, quantity }] } }
         });
     } else {
-        const itemIndex = cart.items.findIndex(p => p.product.toString() === productId);
-        if (itemIndex > -1) {
-            cart.items[itemIndex].quantity += quantity;
+        const existingItem = cart.items.find(i => i.productId === productId);
+        if (existingItem) {
+            await prisma.cartItem.update({
+                where: { id: existingItem.id },
+                data: { quantity: existingItem.quantity + quantity }
+            });
         } else {
-            cart.items.push({ product: productId, quantity });
+            await prisma.cartItem.create({ data: { cartId: cart.id, productId, quantity } });
         }
-        cart.updatedAt = Date.now();
-        await cart.save();
     }
 
     logger.info(`Item agregado al carrito para usuario: ${userId}`);
-    return await getCartWithDTO(userId);
+    return getCartWithDTO(userId);
 };
 
 exports.updateCartItem = async (userId, itemId, quantity) => {
-    const cart = await Cart.findOne({ user: userId });
+    const cart = await prisma.cart.findUnique({ where: { userId }, include: { items: true } });
+    if (!cart) throw new ErrorResponse('Carrito no encontrado', 404);
 
-    if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
-    }
+    const item = cart.items.find(i => i.id === itemId);
+    if (!item) throw new ErrorResponse('Item no encontrado', 404);
 
-    const item = cart.items.id(itemId);
-    if (!item) {
-        const error = new Error('Item no encontrado');
-        error.statusCode = 404;
-        throw error;
-    }
-
-    item.quantity = quantity;
-    await cart.save();
-
+    await prisma.cartItem.update({ where: { id: itemId }, data: { quantity } });
     logger.info(`Item actualizado en carrito para usuario: ${userId}`);
-    return await getCartWithDTO(userId);
+    return getCartWithDTO(userId);
 };
 
 exports.removeFromCart = async (userId, itemId) => {
-    const cart = await Cart.findOne({ user: userId });
+    const cart = await prisma.cart.findUnique({ where: { userId }, include: { items: true } });
+    if (!cart) throw new ErrorResponse('Carrito no encontrado', 404);
 
-    if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
-    }
-
-    cart.items = cart.items.filter(item => item._id.toString() !== itemId);
-    await cart.save();
-
+    await prisma.cartItem.deleteMany({ where: { id: itemId, cartId: cart.id } });
     logger.info(`Item eliminado del carrito para usuario: ${userId}`);
-    return await getCartWithDTO(userId);
+    return getCartWithDTO(userId);
 };
 
 exports.clearCart = async (userId) => {
-    const cart = await Cart.findOne({ user: userId });
-    if (!cart) {
-        const error = new Error('Carrito no encontrado');
-        error.statusCode = 404;
-        throw error;
-    }
+    const cart = await prisma.cart.findUnique({ where: { userId } });
+    if (!cart) throw new ErrorResponse('Carrito no encontrado', 404);
 
-    cart.items = [];
-    await cart.save();
-
+    await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
     logger.info(`Carrito vaciado para usuario: ${userId}`);
-    return cart;
+    return { items: [] };
 };

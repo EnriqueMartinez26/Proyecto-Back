@@ -1,4 +1,5 @@
 const PlatformService = require('../services/platformService');
+const parseBulkIds = require('../utils/parseBulkIds');
 
 // Get all platforms
 exports.getPlatforms = async (req, res, next) => {
@@ -56,23 +57,7 @@ exports.deletePlatform = async (req, res, next) => {
 // Delete multiple platforms (Soft Delete)
 exports.deletePlatforms = async (req, res, next) => {
     try {
-        let ids = [];
-
-        // 1. Try body as array
-        if (Array.isArray(req.body) && req.body.length > 0) {
-            ids = req.body;
-        }
-        // 2. Try body with 'ids' property
-        else if (req.body.ids && Array.isArray(req.body.ids)) {
-            ids = req.body.ids;
-        }
-        // 3. Try query param 'ids' (comma separated)
-        else if (req.query.ids) {
-            ids = Array.isArray(req.query.ids)
-                ? req.query.ids
-                : req.query.ids.split(',').filter(Boolean);
-        }
-
+        const ids = parseBulkIds(req);
         const result = await PlatformService.deletePlatforms(ids);
 
         res.status(200).json({
