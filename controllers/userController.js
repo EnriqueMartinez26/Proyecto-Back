@@ -115,7 +115,7 @@ exports.updateUser = async (req, res, next) => {
 
     // Validación preventiva
     if (req.user.id === req.params.id && role && role !== 'admin') {
-      // Ignoramos auto-degradación
+      throw new ErrorResponse('No puedes quitarte tus propios privilegios de administrador.', 400);
     }
 
     const user = await prisma.user.update({
